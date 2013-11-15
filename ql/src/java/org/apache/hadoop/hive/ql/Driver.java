@@ -89,13 +89,17 @@ import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContext;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContextImpl;
 import org.apache.hadoop.hive.ql.parse.ImportSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
-import org.apache.hadoop.hive.ql.parse.ParseDriver;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.VariableSubstitution;
+import org.apache.hadoop.hive.ql.parse.sql.ExplainSession;
+import org.apache.hadoop.hive.ql.parse.sql.SqlParseDriver;
+import org.apache.hadoop.hive.ql.parse.sql.SqlParseException;
+import org.apache.hadoop.hive.ql.parse.sql.SqlTextSession;
+import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
@@ -420,7 +424,9 @@ public class Driver implements CommandProcessor {
       ctx.setHDFSCleanup(true);
 
       perfLogger.PerfLogBegin(LOG, PerfLogger.PARSE);
-      ParseDriver pd = new ParseDriver();
+      // use SqlParse directly, in which SQL Parser will be called first, then Hive Parser if SQL
+      // Parser failed.
+      SqlParseDriver pd = new SqlParseDriver(conf);
       ASTNode tree = pd.parse(command, ctx);
       tree = ParseUtils.findRootNonNullToken(tree);
       perfLogger.PerfLogEnd(LOG, PerfLogger.PARSE);
@@ -493,7 +499,7 @@ public class Driver implements CommandProcessor {
           doAuthorization(sem);
         } catch (AuthorizationException authExp) {
           errorMessage = "Authorization failed:" + authExp.getMessage()
-                  + ". Use show grant to get more details.";
+          + ". Use show grant to get more details.";
           console.printError(errorMessage);
           return 403;
         } finally {
@@ -501,9 +507,22 @@ public class Driver implements CommandProcessor {
         }
       }
 
-      //restore state after we're done executing a specific query
+      // restore state after we're done executing a specific query
 
       return 0;
+
+    } catch (SqlParseException e) {
+      errorMessage = "FAILED: SQL Parse Error: " + e.getMessage();
+      SQLState = ErrorMsg.findSQLState(e.getMessage());
+      console.printError(errorMessage, "\n"
+          + org.apache.hadoop.util.StringUtils.stringifyException(e));
+      return (15);
+    } catch (SqlXlateException e) {
+      errorMessage = "FAILED: SQL AST Translate Error: " + e.getMessage();
+      SQLState = ErrorMsg.findSQLState(e.getMessage());
+      console.printError(errorMessage, "\n"
+          + org.apache.hadoop.util.StringUtils.stringifyException(e));
+      return (14);
     } catch (Exception e) {
       ErrorMsg error = ErrorMsg.getErrorMsg(e.getMessage());
       errorMessage = "FAILED: " + e.getClass().getSimpleName();
@@ -1465,6 +1484,17 @@ public class Driver implements CommandProcessor {
   }
 
   public boolean getResults(ArrayList<String> res) throws IOException, CommandNeedRetryException {
+
+    // If SQL is explain plan for ..., output transformed SQL
+    if (ExplainSession.isExplain()) {
+      res.add("TRANSFORMED SQL:");
+      res.add("  " + SqlTextSession.get());
+      res.add("");
+
+      SqlTextSession.clean();
+      ExplainSession.clean();
+    }
+
     if (plan != null && plan.getFetchTask() != null) {
       FetchTask ft = plan.getFetchTask();
       ft.setMaxRows(maxRows);

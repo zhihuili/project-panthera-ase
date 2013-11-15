@@ -20,7 +20,7 @@
   <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
   <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/ant-1.6.5.jar"/>
   <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/commons-cli-1.2.jar"/>
-  <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/commons-codec-1.3.jar"/>
+  <classpathentry kind="lib" path="build/ivy/lib/default/commons-codec-@commons-codec.version@.jar"/>
   <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/commons-el-1.0.jar"/>
   <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/commons-httpclient-3.0.1.jar"/>
   <classpathentry kind="lib" path="build/ivy/lib/hadoop0.20.shim/commons-logging-1.1.1.jar"/>
@@ -89,6 +89,7 @@
   <classpathentry kind="lib" path="build/ivy/lib/default/snappy-@snappy.version@.jar"/>
   <classpathentry kind="lib" path="build/beeline/hive-beeline-@HIVE_VERSION@.jar"/>
   <classpathentry kind="lib" path="build/ivy/lib/default/tempus-fugit-@tempus-fugit.version@.jar"/>
+  <classpathentry kind="lib" path="lib/lexer-parser-walker-composed-1.0-SNAPSHOT.jar"/>
   <classpathentry kind="src" path="build/contrib/test/src"/>
   <classpathentry kind="src" path="build/metastore/gen/antlr/gen-java"/>
   <classpathentry kind="lib" path="build/testutils/hive-testutils-@HIVE_VERSION@.jar"/>

@@ -82,6 +82,20 @@
               logDirectory="${test.log.dir}/clientpositive"
               hadoopVersion="${hadoopVersion}"/>
 
+    <qtestgen hiveRootDirectory="${hive.root}"
+              outputDirectory="${test.build.src}/org/apache/hadoop/hive/cli"
+              templatePath="${ql.test.template.dir}" template="TestCliDriver.vm"
+              queryDirectory="${ql.test.query.clientpositive.dir}/sql"
+              queryFile="${qfile}"
+              excludeQueryFile="${ql.test.clientpositive.exclude}"
+              queryFileRegex="${qfile_regex}"
+              clusterMode="${clustermode}"
+              runDisabled="${run_disabled}"
+              resultsDirectory="${ql.test.results.clientpositive.dir}/sql" className="TestCliDriverSQL"
+              logFile="${test.log.dir}/testclidriverSQLgen.log"
+              logDirectory="${test.log.dir}/clientpositive/sql"
+              hadoopVersion="${hadoopVersion}"/>
+
     <if>
       <matches string="${iterate.hive.all}" pattern="beeline"/>
       <then>
