@@ -34,7 +34,7 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  * Define filter block's PLSQL node type.<br>
  * Implement PLSQL node type method.<br>
  * PLSQLFilterBlockFactory.
- * 
+ *
  */
 public class PLSQLFilterBlockFactory extends FilterBlockFactory {
 
@@ -69,9 +69,6 @@ public class PLSQLFilterBlockFactory extends FilterBlockFactory {
     return instance;
   }
 
-  /**
-   *
-   */
   @Override
   public int isCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack, CommonTree branch)
       throws SqlXlateException {
@@ -129,4 +126,52 @@ public class PLSQLFilterBlockFactory extends FilterBlockFactory {
     }
     return 0;
   }
+
+ @Override
+ public int isAnyElementCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack, CommonTree child)
+     throws SqlXlateException {
+   Stack<CommonTree> tempStack = new Stack<CommonTree>();
+   if (selectStack.size() <= 1) {
+     return 0;
+   }
+   int level = -1;
+   if (child.getChildCount() == 2) {// tableName.columnName
+     while (selectStack.size() > 0) {
+       if (SqlXlateUtil.containTableName(child.getChild(0).getText(), (CommonTree) selectStack
+           .peek().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM))) {
+         level = tempStack.size();
+         break;
+       }
+       tempStack.push(selectStack.pop());
+     }
+   } else {// only columnName
+     String columnName = child.getChild(0).getText();
+
+     while (selectStack.size() > 0) {
+       CommonTree from = (CommonTree) selectStack.peek().getFirstChildWithType(
+           PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
+       List<Column> columnList = qInfo.getRowInfo(from);
+       boolean find = false;
+       for (Column column : columnList) {
+         if (columnName.equals(column.getColAlias())) {
+           find = true;
+           break;
+         }
+       }
+       if (find) {
+         level = tempStack.size();
+         break;
+       }
+       tempStack.push(selectStack.pop());
+     }
+   }
+   while (tempStack.size() > 0) {
+     selectStack.push(tempStack.pop());
+   }
+   if (level >= 0) {
+     return level;
+   } else {
+     throw new SqlXlateException((CommonTree) child.getChild(0), "Element not find in scope.");
+   }
+ }
 }

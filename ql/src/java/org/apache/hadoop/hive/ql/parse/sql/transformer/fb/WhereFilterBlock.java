@@ -31,6 +31,11 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
 
 
 public class WhereFilterBlock extends TypeFilterBlock {
+  private CommonTree subtable;
+
+  public CommonTree getSubTable() {
+    return subtable;
+  }
 
   @Override
   void preExecute(FilterBlockContext fbContext, TranslateContext context)
@@ -73,6 +78,7 @@ public class WhereFilterBlock extends TypeFilterBlock {
     }
     CommonTree subq = FilterBlockUtil.makeSelectBranch(newTree, context,
         (CommonTree) leftSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
+    this.subtable = (CommonTree) newTree.getChild(0).getChild(0).getChild(0).getChild(0).getChild(0);
     if (transformedNode.getType() == PantheraParser_PLSQLParser.SUBQUERY) {
       subq.getParent().replaceChildren(subq.childIndex, subq.childIndex, transformedNode);
     } else {
@@ -84,6 +90,13 @@ public class WhereFilterBlock extends TypeFilterBlock {
     // if select * where easy, not come here because transformed is null
     // if select * where subQ, will expand asterisk.
     CommonTree selectList = FilterBlockUtil.cloneSelectListFromSelect(leftSelect);
+    List <CommonTree> anyList = new ArrayList<CommonTree>();
+    FilterBlockUtil.findNode(selectList, PantheraParser_PLSQLParser.ANY_ELEMENT, anyList);
+    for (CommonTree any:anyList) {
+      if (any.getChildCount() == 2) {
+        any.replaceChildren(0, 0, FilterBlockUtil.createSqlASTNode(any, PantheraParser_PLSQLParser.ID, subtable.getText()));
+      }
+    }
     newTree.addChild(selectList);
     this.setTransformedNode(newTree);
   }
@@ -201,10 +214,19 @@ public class WhereFilterBlock extends TypeFilterBlock {
     if(select.getCharPositionInLine() != this.getTransformedNode().getCharPositionInLine()) {
       return;
     }
-    CommonTree simpleGroup = FilterBlockUtil.cloneTree(group);
-    if(group.getChild(group.getChildCount() - 1).getType() == PantheraExpParser.SQL92_RESERVED_HAVING) {
-      simpleGroup.deleteChild(simpleGroup.getChildCount() - 1);
+    List <CommonTree> anyList = new ArrayList<CommonTree>();
+    CommonTree having = (CommonTree) group.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING);
+    if (having != null) {
+      group.deleteChild(having.childIndex);
     }
+    FilterBlockUtil.findNode(group, PantheraParser_PLSQLParser.ANY_ELEMENT, anyList);
+    for (CommonTree any:anyList) {
+      if (any.getChildCount() == 2) {
+        any.replaceChildren(0, 0, FilterBlockUtil.createSqlASTNode(any, PantheraParser_PLSQLParser.ID, subtable.getText()));
+      }
+    }
+    CommonTree simpleGroup = FilterBlockUtil.cloneTree(group);
+    group.addChild(having);
     // TODO fix user defined alias problem.
     CommonTree transSelect = this.getTransformedNode();
     transSelect.addChild(simpleGroup);

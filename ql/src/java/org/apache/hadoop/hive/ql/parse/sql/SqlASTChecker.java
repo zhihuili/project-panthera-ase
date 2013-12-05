@@ -40,7 +40,7 @@ public class SqlASTChecker {
       //FIXME better output here
       throw new SqlParseException("Uncompleted input");
     } else {
-      throw new SqlParseException("Unknow error: " + tree.toString());
+      throw new SqlParseException("Unknown error: " + tree.toString());
     }
   }
 
@@ -84,6 +84,9 @@ public class SqlASTChecker {
       //in (a set contains value null)
       LOG.info("Warning: Panthera may output wrong result when the subquery result set contains null");
       break;
+    case PantheraParser_PLSQLParser.OVER_VK:
+      //all window functions are not supported when there is subqueries currently
+      throw new SqlXlateException(tree, "Currently Panthera don't support window functions!");
     default:
     }
     return ;

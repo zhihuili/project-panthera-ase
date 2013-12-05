@@ -300,7 +300,11 @@ public class SqlParseDriver {
       LOG.error("SQL transform error: " + e.toString());
       e.outputException(command);
       throw e;
+    } catch (Exception e) {
+      LOG.error("Sql transform unknow error");
+      throw new SqlXlateException("Unknow error encountered, please check your input.");
     }
+
     LOG.info("Hive AST after translation : " + hiveAST.toStringTree());
     LOG.info("Translation Completed.");
     return hiveAST;
@@ -346,13 +350,10 @@ public class SqlParseDriver {
             throw sqlParseException;
           }
         } catch (SqlXlateException sqlXlateException) {
-          try {
-            LOG.info("SQL parser failed because of sqlXlate error.");
-            LOG.info("Trying to use Hive Parser secondly...");
-            return parseDriver.parse(command, ctx);
-          } catch (ParseException parseException) {
-            throw sqlXlateException;
-          }
+          // when encounter this exception, just rethrow exception instead try Hive parse again.
+          LOG.info("SQL parser failed because of sqlXlate error.");
+          LOG.info("get SqlXlateException, would not try to use Hive Parser !");
+          throw sqlXlateException;
         } catch (Exception e) {
           try {
             LOG.info("SQL parser failed because of unknown error.");

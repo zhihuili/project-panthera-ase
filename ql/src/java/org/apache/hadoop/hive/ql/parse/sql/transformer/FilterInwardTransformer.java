@@ -25,6 +25,7 @@ import java.util.Map;
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
+import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
@@ -39,6 +40,8 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  * So we need to move the filter to the bottom select.
  *
  * Filters under join on node will also inward to the bottom select or top select.
+ * Also change the filters if right hand contains count(*) but left not contains.<br>
+ * <li>SELECT AVG(S_GRADE), COUNT(S_GRADE), S_CITY FROM STAFF GROUP BY S_CITY HAVING 2 < COUNT(*);
  *
  * FilterInwardTransformer.
  *
@@ -63,6 +66,21 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
       transformFilterInward((CommonTree) (tree.getChild(i)), context);
     }
 
+    // if tree is a filter, need to check if count(*) at right.
+    switch (tree.getType()) {
+    case PantheraParser_PLSQLParser.EQUALS_OP:
+    case PantheraExpParser.EQUALS_NS:
+    case PantheraParser_PLSQLParser.NOT_EQUAL_OP:
+    case PantheraParser_PLSQLParser.GREATER_THAN_OP:
+    case PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP:
+    case PantheraParser_PLSQLParser.LESS_THAN_OP:
+    case PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP:
+      needExchange(tree);
+      break;
+    default:
+      break;
+    }
+
     if (PantheraExpParser.LEFTSEMI_STR.equals(tree.getText())) {
       // TODO the method can only handle one condition:
       // in outer where conditions with "or" node, the columns in the "or" branch must
@@ -72,6 +90,56 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
 
   }
 
+  /**
+   * change the tree's 2 children if the right tree contains count(*) but left not contains.
+   *
+   * @param tree
+   * @return
+   */
+  private boolean needExchange(CommonTree tree){
+    if (tree.getChildCount() == 2) {
+      // for count(*) at right hand of operator
+      CommonTree sf = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.STANDARD_FUNCTION, "STANDARD_FUNCTION");
+      CommonTree cnt = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.COUNT_VK, "count");
+      CommonTree ast = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.ASTERISK, "*");
+      sf.addChild(cnt);
+      cnt.addChild(ast);
+      List<CommonTree> funcList = new ArrayList<CommonTree>();
+      FilterBlockUtil.findSubTree((CommonTree) tree.getChild(1), sf, funcList);
+      if (funcList.size() > 0) {
+        // right hand of operator contains count(*)
+        List<CommonTree> leftFuncList = new ArrayList<CommonTree>();
+        FilterBlockUtil.findSubTree((CommonTree) tree.getChild(0), sf, leftFuncList);
+        if (leftFuncList.isEmpty()) {
+          // left does not contain
+          // exchange count(*) to left
+          SqlXlateUtil.exchangeChildrenPosition(tree);
+          switch (tree.getType()) {
+          case PantheraParser_PLSQLParser.GREATER_THAN_OP:
+            tree.getToken().setText("<");
+            tree.getToken().setType(PantheraParser_PLSQLParser.LESS_THAN_OP);
+            break;
+          case PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP:
+            tree.getToken().setText("<=");
+            tree.getToken().setType(PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP);
+            break;
+          case PantheraParser_PLSQLParser.LESS_THAN_OP:
+            tree.getToken().setText(">");
+            tree.getToken().setType(PantheraParser_PLSQLParser.GREATER_THAN_OP);
+            break;
+          case PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP:
+            tree.getToken().setText(">=");
+            tree.getToken().setType(PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP);
+            break;
+          default:
+            break;
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 
   private void processLeftSemiJoin(TranslateContext context, CommonTree join)
       throws SqlXlateException {

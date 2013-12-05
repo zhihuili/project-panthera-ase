@@ -439,5 +439,16 @@ public abstract class FilterBlockFactory {
     }
   }
 
+  /**
+   * return correlated level of ANY_ELEMENT<br>
+   * make sure 3rd parameter is of type ANY_ELEMENT when call.
+   * @param qInfo
+   * @param selectStack
+   * @param branch
+   * @return
+   * @throws SqlXlateException
+   */
+  public abstract int isAnyElementCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack,
+      CommonTree branch) throws SqlXlateException;
 
 }

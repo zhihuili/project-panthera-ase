@@ -31,8 +31,11 @@ public class OrderByElementsGenerator extends BaseHiveASTGenerator {
       CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
     ASTNode ret = SqlXlateUtil.newASTNode(HiveParser.TOK_ORDERBY, "TOK_ORDERBY");
     ASTNode tokQuery = (ASTNode) currentHiveNode.getFirstChildWithType(HiveParser.TOK_QUERY);
-    super.attachHiveNode(hiveRoot, (ASTNode) tokQuery.getChild(1), ret);
+    if (tokQuery != null) {
+      super.attachHiveNode(hiveRoot, (ASTNode) tokQuery.getChild(1), ret);
+    } else { // for windowing function over clause, e.g. over(order by col1)
+      super.attachHiveNode(hiveRoot,  currentHiveNode, ret);
+    }
     return super.generateChildren(hiveRoot, sqlRoot, ret, currentSqlNode, context);
   }
-
 }

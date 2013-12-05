@@ -241,7 +241,7 @@ public class PrepareQueryInfoTransformer extends BaseSqlASTTransformer {
         if (alias == null) {
           aliasNode = SqlXlateUtil.newASTNode(HiveParser.Identifier, aliasGen
               .generateAliasName());
-          // Create a new SqlASTNode for alias for convinient processing later.
+          // Create a new SqlASTNode for alias for convenient processing later.
           CommonTree sqlAliasNode = FilterBlockUtil.createSqlASTNode(src, PantheraParser_PLSQLParser.ALIAS, "ALIAS");
           sqlAliasNode.addChild(FilterBlockUtil.createSqlASTNode(src, PantheraParser_PLSQLParser.ID, aliasNode.getText()));
           // Attach it to the TABLE_REF_ELEMENT node as the first child.

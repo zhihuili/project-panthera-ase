@@ -83,6 +83,7 @@ public class QueryBlock extends BaseFilterBlock {
     preProcessQueryBlock();
 
     fbContext.getQueryStack().push(this);
+    fbContext.getSelectStack().push(this.getASTNode());
 
     processChildren(fbContext, context);
 
@@ -109,6 +110,7 @@ public class QueryBlock extends BaseFilterBlock {
       execute(fbContext, context);
     }
 
+    fbContext.getSelectStack().pop();
     fbContext.getQueryStack().pop();
 
     // limit

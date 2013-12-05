@@ -87,7 +87,6 @@ public class UnCorrelatedFilterBlock extends NormalFilterBlock {
     CommonTree selectList = (CommonTree) topSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST);
     if (selectList != null && selectList.getChildCount() > 0) {
-      //FIXME select tablename.* case
       return;
     }
     List<Column> columnList = fbContext.getqInfo().getRowInfo((CommonTree) fbContext.
@@ -103,18 +102,12 @@ public class UnCorrelatedFilterBlock extends NormalFilterBlock {
           throw new SqlXlateException(topSelect, "No select-list nor asterisk in select statement");
         }
       }
-      int count = 0;
       for (Column column : columnList) {
         CommonTree selectItem = FilterBlockUtil.createSqlASTNode(selectList, PantheraExpParser.SELECT_ITEM,
             "SELECT_ITEM");
         selectList.addChild(selectItem);
         CommonTree expr = FilterBlockUtil.createSqlASTNode(selectList, PantheraExpParser.EXPR, "EXPR");
         selectItem.addChild(expr);
-        //add alias to avoid duplicate name in multi-table when expanding *
-        CommonTree alias = FilterBlockUtil.createSqlASTNode(selectList, PantheraExpParser.ALIAS, "ALIAS");
-        selectItem.addChild(alias);
-        CommonTree aliasId = FilterBlockUtil.createSqlASTNode(selectList, PantheraExpParser.ID, "panthera_col_" + count++);
-        alias.addChild(aliasId);
         CommonTree cascatedElement = FilterBlockUtil.createSqlASTNode(
             selectList, PantheraExpParser.CASCATED_ELEMENT, "CASCATED_ELEMENT");
         expr.addChild(cascatedElement);

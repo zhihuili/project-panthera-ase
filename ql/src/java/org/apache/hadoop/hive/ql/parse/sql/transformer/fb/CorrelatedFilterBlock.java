@@ -83,7 +83,7 @@ public class CorrelatedFilterBlock extends NormalFilterBlock {
     nodeList = new ArrayList<CommonTree>();
     FilterBlockUtil.findNode(normal, PantheraParser_PLSQLParser.STANDARD_FUNCTION, nodeList);
     for (CommonTree node : nodeList) {
-      if (node.getChild(0).getText().equals("substring")) {
+      if (node.getChild(0).getText().equals("substring") || node.getChild(0).getText().equals("substr")) {
         continue;
       }
       int level = PLSQLFilterBlockFactory.getInstance().isCorrelated(fbContext.getqInfo(), selectStack, FilterBlockUtil.findOnlyNode(node, PantheraParser_PLSQLParser.CASCATED_ELEMENT));

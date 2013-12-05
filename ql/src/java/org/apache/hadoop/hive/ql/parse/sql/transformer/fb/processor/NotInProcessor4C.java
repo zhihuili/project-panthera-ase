@@ -24,6 +24,7 @@ import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
+import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.PLSQLFilterBlockFactory;
 
 /**
  * Process correlated NOT IN in WHERE subquery<br>
@@ -36,12 +37,23 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
   @Override
   void processFB() throws SqlXlateException {
 
-
     CommonTree leftIn = super.getSubQOpElement();
+    // check if leftIn is from the upper by 1 level.
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), leftIn) != 0) {
+      throw new SqlXlateException(leftIn, "not support element from outter query as NOT_IN sub-query node");
+    }
+    fbContext.getSelectStack().push(sq);
     buildAnyElement(leftIn, topSelect);
 
+    if (bottomSelect.getFirstChildWithType(PantheraExpParser.SELECT_LIST).getChildCount() > 1) {
+      throw new SqlXlateException((CommonTree) bottomSelect.getFirstChildWithType(PantheraExpParser
+          .SELECT_LIST), "NOT_IN subQuery select-list should have only one column");
+    }
     CommonTree rightIn = (CommonTree) ((CommonTree) bottomSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST)).getChild(0).getChild(0).getChild(0);
+    // rightIn do not have to check level
     buildAnyElement(rightIn, bottomSelect);
 
     CommonTree equal = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.EQUALS_OP, "=");
@@ -57,20 +69,23 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
     }
     CommonTree logicExpr = (CommonTree) where.getChild(0);
     CommonTree oldCondition = (CommonTree) logicExpr.deleteChild(0);
+    CommonTree topand = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.SQL92_RESERVED_AND, "and");
     if (oldCondition != null) {
       CommonTree and = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.SQL92_RESERVED_AND, "and");
       logicExpr.addChild(and);
       and.addChild(oldCondition);
       and.addChild(equal);
 
-      fb.setASTNode(and);
+      topand.addChild(and);
     } else {
       logicExpr.addChild(equal);
 
-      fb.setASTNode(equal);
+      topand.addChild(equal);
     }
+    topand.addChild(fb.getASTNode());
+    fb.setASTNode(topand);
 
-    LOG.info("Transform NOT IN to NOT EXIST:"
+    LOG.info("Transform NOT IN to NOT EXISTS:"
         + where.toStringTree().replace('(', '[').replace(')', ']'));
 
     CommonTree selectList = (CommonTree) bottomSelect
@@ -80,7 +95,7 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
     SqlXlateUtil.addCommonTreeChild(bottomSelect, index, FilterBlockUtil.createSqlASTNode(
         subQNode, PantheraExpParser.ASTERISK, "*"));
 
-    /**
+    /*
      * NOT IN correlated subQ will transformed into NOT EXISTS correlated subQ
      * IMPORTANT: The following two line use the two method to handle NOT EXISTS Correlated subQ
      * IMPORTANT: Here is a switch to use either method. Just Comment one line will use another method.

@@ -103,9 +103,15 @@ public class GeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_ORDER, new NothingGenerator());
     genMap.put(PantheraParser_PLSQLParser.ORDER_BY_ELEMENTS, new OrderByElementsGenerator());
     genMap.put(PantheraParser_PLSQLParser.ORDER_BY_ELEMENT, new OrderByElementGenerator());
+    genMap.put(PantheraParser_PLSQLParser.PARTITION_VK, new PartitionGenerator());  // partition keyword
     genMap.put(PantheraParser_PLSQLParser.ALIAS, new NothingGenerator());
     genMap.put(PantheraParser_PLSQLParser.FUNCTION_ENABLING_OVER,
         new FunctionEnablingOverGenerator());
+    genMap.put(PantheraParser_PLSQLParser.FUNCTION_ENABLING_WITHIN_OR_OVER,  // rank() type is FUNCTION_ENABLING_WITHIN_OR_OVER
+        new FunctionEnablingOverGenerator());
+    genMap.put(PantheraParser_PLSQLParser.FIRST_VALUE_VK, new FunctionEnablingOverGenerator()); // windowing function first_value(...)
+    genMap.put(PantheraParser_PLSQLParser.LAST_VALUE_VK, new FunctionEnablingOverGenerator());  // windowing function last_value(...)
+    genMap.put(PantheraParser_PLSQLParser.OVER_VK, new OverGenerator());  // over keyword, e.g. select min(col1) over() from ...
     genMap.put(PantheraParser_PLSQLParser.ARGUMENTS, new NothingGenerator());
     genMap.put(PantheraParser_PLSQLParser.ARGUMENT, new NothingGenerator());
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING, new HavingGenerator());
@@ -155,8 +161,13 @@ public class GeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.REGULAR_ID, new RegularIdGenerator());
     genMap.put(PantheraParser_PLSQLParser.SUBSTRING_VK, new SubstringFuncGenerator());
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_DATE, new DateGenerator());
-    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_BETWEEN, new BetweenGenerator());
-    genMap.put(PantheraParser_PLSQLParser.NOT_BETWEEN, new BetweenGenerator());
+    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_BETWEEN, new NothingGenerator());
+    genMap.put(PantheraParser_PLSQLParser.ROWS_VK, new RowsGenerator());  // rows keyword, used in over clause.
+    genMap.put(PantheraParser_PLSQLParser.ROW_VK, new NothingGenerator()); // row keyword, e.g. "current row"
+    genMap.put(PantheraParser_PLSQLParser.PRECEDING_VK, new PrecedingGenerator()); // preceding
+    genMap.put(PantheraParser_PLSQLParser.FOLLOWING_VK, new FollowingGenerator()); // following
+    genMap.put(PantheraParser_PLSQLParser.UNBOUNDED_VK, new UnboundedGenerator()); // unbounded
+    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_CURRENT, new CurrentGenerator());
     genMap.put(PantheraExpParser.LIMIT_VK, new LimitGenerator());
     genMap.put(PantheraParser_PLSQLParser.SEARCHED_CASE, new SearchedCaseGenerator());
     genMap.put(PantheraParser_PLSQLParser.NOT_LIKE, new NotLikeGenerator());
@@ -167,6 +178,8 @@ public class GeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.PRECISION, new PrecisionGenerator());
     genMap.put(PantheraParser_PLSQLParser.DECIMAL_VK, new DecimalGenerator());
     genMap.put(PantheraParser_PLSQLParser.DEC_VK, new DecimalGenerator());
+
+    genMap.put(PantheraParser_PLSQLParser.CONCATENATION_OP, new ConcatenationOpGenerator());
   }
 
   static {

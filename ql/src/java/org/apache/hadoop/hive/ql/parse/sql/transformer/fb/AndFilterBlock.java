@@ -63,14 +63,6 @@ public class AndFilterBlock extends LogicFilterBlock {
       this.setTransformedNode(leftFB.getTransformedNode());
     } else {
       rightFB.process(fbContext, context);
-      if (rightFB instanceof CorrelatedFilterBlock) {// Correlated
-        fbContext.getTypeStack().pop();
-        TypeFilterBlock outType = fbContext.getTypeStack().peek();
-        if (outType instanceof WhereFilterBlock) {
-          this.rebuildSelectList(rightFB.getTransformedNode());
-        }
-        fbContext.getTypeStack().push(type);
-      }
       this.setTransformedNode(rightFB.getTransformedNode());
     }
   }
@@ -206,79 +198,4 @@ public class AndFilterBlock extends LogicFilterBlock {
     }
   }
 
-  /**
-   * add select item to the most left select
-   *
-   * @param select
-   */
-  private void rebuildSelectList(CommonTree select) {
-    CommonTree thisSelect = FilterBlockUtil.firstAncestorOfType(this.getASTNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
-    List<CommonTree> osList = new ArrayList<CommonTree>();
-    FilterBlockUtil.findNode(select, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, osList);
-    CommonTree outerSelect = FilterBlockUtil.findOnlyNodeWithPosition(select, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, thisSelect.getCharPositionInLine());
-    CommonTree outerSelectList = (CommonTree) outerSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
-    List<CommonTree> nodeList = new ArrayList<CommonTree>();
-    FilterBlockUtil.findNode(outerSelect, PantheraExpParser.SELECT_LIST, nodeList);
-    if (!nodeList.isEmpty() && nodeList.get(0) != outerSelectList) {
-      CommonTree innerSelectList = nodeList.get(0);
-      for (CommonTree node : nodeList) {
-        if (node.getParent().getCharPositionInLine() == thisSelect.getCharPositionInLine()) {
-          innerSelectList = node;
-          break;
-        }
-      }
-      for (int i = 0; i < outerSelectList.getChildCount(); i++) {
-        CommonTree anyElement = (CommonTree) outerSelectList.getChild(i).getChild(0).getChild(0)
-            .getChild(0);
-        String columnName;
-        if (anyElement.getChildCount() == 2) {
-          columnName = anyElement.getChild(1).getText();
-        } else {
-          columnName = anyElement.getChild(0).getText();
-        }
-        List<CommonTree> nameList = new ArrayList<CommonTree>();
-        CommonTree selectItem = null;
-        boolean isExist = false;
-        for (int j = 0; j < innerSelectList.getChildCount(); j++) {
-          selectItem = (CommonTree) innerSelectList.getChild(j);
-          FilterBlockUtil.findNodeText(selectItem, columnName, nameList);
-          if (!nameList.isEmpty()) {
-            isExist = true;
-            break;
-          }
-        }
-        if (!isExist) {
-          CommonTree newSelectItem = FilterBlockUtil.cloneTree((CommonTree) outerSelectList
-              .getChild(i));
-          newSelectItem.deleteChild(1);
-          innerSelectList.addChild(newSelectItem);
-        } else {
-          // FIXME maybe the found column is not the expected one
-          if (selectItem.getChildCount() == 2) {
-            String alias = selectItem.getChild(1).getChild(0).getText();
-            // make sure the column is in format of table.column, so that will not cause ambiguous columns
-            if (anyElement.getChildCount() == 2) {
-              // TODO only delete column name, may have problem
-              anyElement.deleteChild(anyElement.getChildCount() - 1);
-              CommonTree newColumn = FilterBlockUtil.createSqlASTNode((CommonTree) selectItem
-                  .getChild(1).getChild(0), PantheraExpParser.ID, alias);
-              anyElement.addChild(newColumn);
-            } else {
-              CommonTree tableRefElement = FilterBlockUtil.firstAncestorOfType(selectItem,
-                  PantheraParser_PLSQLParser.TABLE_REF_ELEMENT);
-              if (tableRefElement != null
-                  && tableRefElement.getChild(0).getType() == PantheraParser_PLSQLParser.ALIAS) {
-                String tableAliasName = tableRefElement.getChild(0).getChild(0).getText();
-                anyElement.deleteChild(0);
-                anyElement.addChild(FilterBlockUtil.createSqlASTNode((CommonTree) selectItem
-                    .getChild(1).getChild(0), PantheraExpParser.ID, tableAliasName));
-                anyElement.addChild(FilterBlockUtil.createSqlASTNode((CommonTree) selectItem
-                    .getChild(1).getChild(0), PantheraExpParser.ID, alias));
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 }

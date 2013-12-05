@@ -41,7 +41,7 @@ public class SimpleCaseGenerator extends BaseHiveASTGenerator {
     //transfer to standard CASE WHEN expression THEN compval [WHEN expression THEN compval]* [ELSE result] END
     ASTNode whenNode = super.newHiveASTNode(HiveParser.KW_WHEN, "when");
     super.attachHiveNode(hiveRoot, ret, whenNode);
-    if (!(currentSqlNode.getChildCount()>=3)) {
+    if (!(currentSqlNode.getChildCount() >= 2)) {
       throw new SqlXlateException(currentSqlNode, "Parameters error in simple case expression.");
     }
     for (int i = 1; i < currentSqlNode.getChildCount();i++) {
@@ -58,7 +58,7 @@ public class SimpleCaseGenerator extends BaseHiveASTGenerator {
         }
       } else {
         //when-then clause
-        ASTNode equal = SqlXlateUtil.newASTNode(HiveParser.EQUAL, "=");
+        ASTNode equal = SqlXlateUtil.newASTNode(HiveParser.EQUAL_NS, "<=>");
         ret.addChild(equal);
         HiveASTGenerator generatorL = GeneratorFactory.getGenerator((CommonTree) currentSqlNode.getChild(0));
         if (generatorL == null) {

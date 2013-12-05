@@ -286,10 +286,12 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
       table = anyElement.getChild(0).getText();
       if (anyElement.getChildCount() > 2) {
         // schema.table
-        table += ("." + anyElement.getChild(1).getText());
+        //table += ("." + anyElement.getChild(1).getText());
         // merge schema and table as HIVE does not support schema.table.column in where clause.
-        anyElement.deleteChild(1);
-        ((CommonTree) anyElement.getChild(0)).getToken().setText(table);
+        //anyElement.deleteChild(1);
+        //((CommonTree) anyElement.getChild(0)).getToken().setText(table);
+        table = anyElement.getChild(1).getText();
+        anyElement.deleteChild(0);
       }
       //
       // Return null table name if it is not a src table.
@@ -340,6 +342,7 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
       CommonTree OnNode = (CommonTree) joinNode
           .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_ON);
       if (OnNode != null) {
+        checkValidOnCondition(qf, (CommonTree) OnNode.getChild(0).getChild(0));
         List<CommonTree> anyElementList = new ArrayList<CommonTree>();
         FilterBlockUtil.findNode(OnNode, PantheraParser_PLSQLParser.ANY_ELEMENT, anyElementList);
         for (CommonTree anyElement : anyElementList) {
@@ -642,6 +645,71 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
       logicExpr.addChild(expressionRoot);
     } else {
       logicExpr.setChild(0, expressionRoot);
+    }
+  }
+
+  /**
+   * check whether there is OR node and non-equal join condition under ON node.
+   * if there is, throw exception.
+   *
+   * @param context
+   * @param qf
+   * @param node
+   * @param joinInfo
+   * @throws SqlXlateException
+   */
+  private void checkValidOnCondition(QueryInfo qf, CommonTree node) throws SqlXlateException {
+
+    if (node.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_AND) {
+      // check the left child.
+      checkValidOnCondition(qf, (CommonTree) node.getChild(0));
+      // check the right child.
+      checkValidOnCondition(qf, (CommonTree) node.getChild(1));
+
+    } else {
+      // HIVE does not support OR operator in join conditions
+      List<CommonTree> OrList = new ArrayList<CommonTree>();
+      FilterBlockUtil.findNode(node, PantheraParser_PLSQLParser.SQL92_RESERVED_OR, OrList);
+      if (!OrList.isEmpty()) {
+        throw new SqlXlateException(OrList.get(0),
+            "Panthera don't support OR operation for join ON condition!");
+      }
+
+      // if the operation is not equal operation and there are columns from different table, hive would not support
+      // this condition.
+      if (node.getChildCount() == 2 && node.getType() != PantheraParser_PLSQLParser.EQUALS_OP
+          && node.getType() != PantheraExpParser.EQUALS_NS) {
+        List<CommonTree> leftAnyElementList = new ArrayList<CommonTree>();
+        List<CommonTree> rightAnyElementList = new ArrayList<CommonTree>();
+        FilterBlockUtil.findNode((CommonTree) node.getChild(0),
+            PantheraParser_PLSQLParser.ANY_ELEMENT, leftAnyElementList);
+        FilterBlockUtil.findNode((CommonTree) node.getChild(1),
+            PantheraParser_PLSQLParser.ANY_ELEMENT, rightAnyElementList);
+        if (!leftAnyElementList.isEmpty() && !rightAnyElementList.isEmpty()) {
+          String table = null;
+          boolean errFlag = false;
+          // concat leftlist and rightlist into one to check whether there are columns from different tables;
+          leftAnyElementList.addAll(rightAnyElementList);
+          for (CommonTree anyElement : leftAnyElementList) {
+            String table1 = getTableName(qf, anyElement);
+            if (table1 == null) {
+              errFlag = true;
+              break;
+            }
+            if (table == null) {
+              table = table1;
+              continue;
+            }
+            if (!table.equals(table1)) {
+              errFlag = true;
+              break;
+            }
+          }
+          if (errFlag) {
+            throw new SqlXlateException(node, "Panthera don't support non-equal join condition!");
+          }
+        }
+      }
     }
   }
 }

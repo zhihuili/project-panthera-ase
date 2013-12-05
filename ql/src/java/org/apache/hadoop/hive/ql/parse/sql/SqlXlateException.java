@@ -59,6 +59,11 @@ public class SqlXlateException extends Exception {
     this.node = node;
   }
 
+  @Deprecated
+  public SqlXlateException(String msg) {
+    super(msg);
+  }
+
   public void outputException(String origin) {
     if (this.node == null) {
       messagePrepare(super.getMessage());

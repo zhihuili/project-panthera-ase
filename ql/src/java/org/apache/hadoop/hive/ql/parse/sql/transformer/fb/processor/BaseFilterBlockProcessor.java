@@ -23,7 +23,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Stack;
 
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
@@ -133,7 +132,6 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
     CommonTree selectList = (CommonTree) topSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST);
     if (selectList != null && selectList.getChildCount() > 0) {
-      // FIXME select tablename.* case
       return;
     }
     List<Column> columnList = fbContext.getqInfo()
@@ -324,13 +322,15 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
   Map<Boolean, List<CommonTree>> getFilter(CommonTree filterOp) throws SqlXlateException {
 
     Map<Boolean, List<CommonTree>> result = new HashMap<Boolean, List<CommonTree>>();
-    Stack<CommonTree> selectStack = new Stack<CommonTree>();
-    selectStack.push(originalTopSelect);
-    selectStack.push(originalBottomSelect);
+    int minLevel = -1;
+    int maxLevel = 0;
     for (int i = 0; i < filterOp.getChildCount(); i++) {
       CommonTree child = (CommonTree) filterOp.getChild(i);
-      if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
-          selectStack, child) == 0) {
+      int level = PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(), this.fbContext.getSelectStack(), child);
+      if (maxLevel < level) {
+        maxLevel = level;
+      }
+      if (level == 0) {
         if (child.getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT
             || FilterBlockUtil.findOnlyNode(child, PantheraExpParser.CASCATED_ELEMENT) != null) {
           List<CommonTree> uncorrelatedList = result.get(false);
@@ -338,24 +338,55 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
             uncorrelatedList = new ArrayList<CommonTree>();
             result.put(false, uncorrelatedList);
           }
+          // those imm is not applicable to refresh minLevel value.
+          if (minLevel < 0) {
+            minLevel = level;
+          } else if (minLevel > level) {
+            minLevel = level;
+          }
           uncorrelatedList.add(child);
         }
       } else {
+        if (minLevel < 0) {
+          minLevel = level;
+        } else if (minLevel > level) {
+          minLevel = level;
+        }
         List<CommonTree> correlatedList = result.get(true);
         if (correlatedList == null) {
           correlatedList = new ArrayList<CommonTree>();
           result.put(true, correlatedList);
         }
         correlatedList.add(child);
-        if (filterOp.getType() != PantheraParser_PLSQLParser.EQUALS_OP) {
-          this.hasNotEqualCorrelated = true;
-          Map<CommonTree, List<CommonTree>> joinMap = (Map<CommonTree, List<CommonTree>>) this.context
-              .getBallFromBasket(TranslateContext.JOIN_TYPE_NODE_BALL);
-          if (joinMap != null) {
-            List<CommonTree> notEqualConditionList = joinMap.get(joinTypeNode);
-            if (notEqualConditionList != null) {
-              notEqualConditionList.add(filterOp);
+
+      }
+      if (maxLevel > 0) {
+        // if maxLevel > 0, then minLevel never be -1
+        // this case is same as the upper else.
+        if (maxLevel - minLevel > 1) {
+          throw new SqlXlateException(filterOp, "currently not support correlated level greater than 1");
+        } else if (maxLevel == minLevel) {
+          // this case it is uncorrelated filter for upper level.
+          // though cannot put under ON, the join is OK to be leftsemi-join
+          if (minLevel > 1) {
+            throw new SqlXlateException(filterOp, "currently not support correlated level greater than 1");
+          }
+        } else {
+          // maxLevel is one more over minLevel
+          // maxLevel is not equal to minLevel, means there are at least two level.
+          if (filterOp.getType() != PantheraParser_PLSQLParser.EQUALS_OP && filterOp.getType() != PantheraExpParser.EQUALS_NS) {
+            this.hasNotEqualCorrelated = true;
+            Map<CommonTree, List<CommonTree>> joinMap = (Map<CommonTree, List<CommonTree>>) this.context
+                .getBallFromBasket(TranslateContext.JOIN_TYPE_NODE_BALL);
+            if (joinMap != null) {
+              List<CommonTree> notEqualConditionList = joinMap.get(joinTypeNode);
+              if (notEqualConditionList != null) {
+                notEqualConditionList.add(filterOp);
+              }
             }
+          }
+          if (minLevel > 0) {
+            throw new SqlXlateException(filterOp, "currently not support correlated filter of upper level");
           }
         }
       }
@@ -616,7 +647,7 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
       String columnAliasName = columnAlias.getChild(0).getText();
       columnMap.put(columnName, columnAliasName);
     }
-    this.rebuildGroupOrder(alias);
+    // this.rebuildGroupOrder(alias);
     return aliasList;
   }
 
@@ -743,7 +774,7 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
       CommonTree newAlias = this.addSelectItemClosing(selectList, this
           .createCascatedElement(FilterBlockUtil.dupNode((CommonTree) topAlias.getChild(0)),
               FilterBlockUtil.dupNode((CommonTree) alias.getChild(0))));
-      this.reRebuildGroupOrder(alias.getChild(0).getText(), newAlias.getChild(0).getText());
+      //this.reRebuildGroupOrder(alias.getChild(0).getText(), newAlias.getChild(0).getText());
     }
     return selectList;
   }
@@ -1310,7 +1341,7 @@ public abstract class BaseFilterBlockProcessor implements FilterBlockProcessor {
                 getChild(0).getText() : anyElement.getChild(anyElement.getChildCount() - 1)
                 .getText();
             aliasName.getToken().setText(newColAlias);
-            reRebuildGroupOrder(oldColAlias, newColAlias);
+            //reRebuildGroupOrder(oldColAlias, newColAlias);
           }
         }
       }

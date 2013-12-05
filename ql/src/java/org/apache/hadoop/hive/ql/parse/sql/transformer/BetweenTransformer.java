@@ -27,9 +27,12 @@ import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
+import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
+
 /**
  * transform (BETWEEN AND) to (>= ADN <=) <br/>
  * transform (NOT BETWEEN AND) to (< OR >) <br/>
+ * when encountering between in window specification, ignore it.
  * BetweenTransformer.
  *
  */
@@ -69,6 +72,10 @@ public class BetweenTransformer extends BaseSqlASTTransformer {
    * @param context
    */
   void transBetween(Boolean isNot, CommonTree tree, TranslateContext context) {
+    // for between in window specification
+    if (tree.getParent().getType() == PantheraParser_PLSQLParser.ROWS_VK) {
+      return;
+    }
     CommonTree leftColumn = (CommonTree) tree.getChild(0);
     CommonTree rightColumn = FilterBlockUtil.cloneTree(leftColumn);
     CommonTree leftVar = (CommonTree) tree.getChild(1);

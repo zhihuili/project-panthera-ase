@@ -28,6 +28,7 @@ import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
+import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.PLSQLFilterBlockFactory;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
 
@@ -193,13 +194,19 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
    * @throws SqlXlateException
    */
   void processCompareC() throws SqlXlateException {
+    CommonTree compareElement = super.getSubQOpElement();
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), compareElement) != 0) {
+      throw new SqlXlateException(compareElement, "not support element from outter query compare with sub-query");
+    }
+    fbContext.getSelectStack().push(sq);
 
     this.makeTop();
     this.makeJoin(FilterBlockUtil.createSqlASTNode(subQNode, PantheraParser_PLSQLParser.CROSS_VK, "cross"));
 
     CommonTree compareKeyAlias1 = super.addSelectItem((CommonTree) topSelect
-        .getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST), (CommonTree) this.subQNode
-        .getFirstChildWithType(PantheraParser_PLSQLParser.CASCATED_ELEMENT));
+        .getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST), FilterBlockUtil.cloneTree(compareElement));
 
     // select list
     CommonTree compareKeyAlias2 = super.addAlias((CommonTree) ((CommonTree) bottomSelect
@@ -283,17 +290,25 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
     }
     closingSelect.addChild(selectList);
 
-    // FIXME uncomment the following line will enable nist0095, but need distinct strategy change to support tpch-21
-//    AddAllNeededFilters();
-//    CommonTree cloneMinusList = (CommonTree) cloneMinusTopSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
-//    if (cloneMinusList != null) {
-//      for (int index = 0; index < cloneMinusList.getChildCount(); index++) {
-//        cloneMinusList.replaceChildren(index, index, FilterBlockUtil.cloneTree((CommonTree) topSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST).getChild(index)));
-//      }
-//    }
+    AddAllNeededFilters();
+    CommonTree tempTop = topSelect;
+    topSelect = cloneMinusTopSelect;
+    // add again here
+    AddAllNeededFilters();
+    topSelect = tempTop;
+    CommonTree cloneMinusList = (CommonTree) cloneMinusTopSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
+    if (cloneMinusList != null) {
+      for (int index = 0; index < cloneMinusList.getChildCount(); index++) {
+        cloneMinusList.replaceChildren(index, index, FilterBlockUtil.cloneTree((CommonTree) topSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST).getChild(index)));
+      }
+    }
+    // add alias origin
+    FilterBlockUtil.addColumnAliasOrigin(cloneMinusTopSelect, context);
 
     // set closing select to top select
     topSelect = closingSelect;
+    // add again here
+    AddAllNeededFilters();
 
     super.buildWhereByFB(null, null, null);
 
@@ -343,10 +358,18 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
 
   private void processAggregationCompareUC() throws SqlXlateException {
 
+    CommonTree compareElement = super.getSubQOpElement();
+
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), compareElement) != 0) {
+      throw new SqlXlateException(compareElement, "not support element from outter query compare with sub-query");
+    }
+    fbContext.getSelectStack().push(sq);
+
     this.makeTop();
 
     // add compare item
-    CommonTree compareElement = super.getSubQOpElement();
     CommonTree cloneCompareElement = FilterBlockUtil.cloneTree(compareElement);
 
     CommonTree compareElementAlias = super.addSelectItem((CommonTree) topSelect
@@ -372,6 +395,15 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
    * @throws SqlXlateException
    */
   void processInUC() throws SqlXlateException {
+
+    CommonTree compareElement = super.getSubQOpElement();
+
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), compareElement) != 0) {
+      throw new SqlXlateException(compareElement, "not support element from outter query as IN sub-query node");
+    }
+    fbContext.getSelectStack().push(sq);
 
     this.makeTop();
 
@@ -402,6 +434,14 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
   }
 
   void processInC() throws SqlXlateException {
+    CommonTree compareElement = super.getSubQOpElement();
+
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), compareElement) != 0) {
+      throw new SqlXlateException(compareElement, "not support element from outter query as IN sub-query node");
+    }
+    fbContext.getSelectStack().push(sq);
 
     this.makeTop();
 
@@ -439,6 +479,15 @@ public abstract class CommonFilterBlockProcessor extends BaseFilterBlockProcesso
    * @throws SqlXlateException
    */
   void processNotInUC() throws SqlXlateException {
+    CommonTree compareElement = super.getSubQOpElement();
+
+    CommonTree sq = fbContext.getSelectStack().pop();
+    if (PLSQLFilterBlockFactory.getInstance().isCorrelated(this.fbContext.getqInfo(),
+        this.fbContext.getSelectStack(), compareElement) != 0) {
+      throw new SqlXlateException(compareElement, "not support element from outter query as NOT_IN sub-query node");
+    }
+    fbContext.getSelectStack().push(sq);
+
     CommonTree joinType = FilterBlockUtil.createSqlASTNode(subQNode, PantheraParser_PLSQLParser.CROSS_VK,
         "cross");
     this.makeTop();

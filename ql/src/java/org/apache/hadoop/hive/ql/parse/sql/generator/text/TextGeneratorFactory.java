@@ -79,8 +79,13 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_ORDER, new OrderTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.ORDER_BY_ELEMENTS, new ListTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.ORDER_BY_ELEMENT, new NothingTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.PARTITION_VK, new PartitionTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.ALIAS, new NothingTextGenerator());
-    genMap.put(PantheraParser_PLSQLParser.FUNCTION_ENABLING_OVER, new FuncTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.FUNCTION_ENABLING_OVER, new FuncTextGenerator()); // ordinary functions like sum, avg, etc.
+    genMap.put(PantheraParser_PLSQLParser.FUNCTION_ENABLING_WITHIN_OR_OVER, new FuncTextGenerator()); // rank() function
+    genMap.put(PantheraParser_PLSQLParser.FIRST_VALUE_VK, new FuncTextGenerator()); // windowing function first_value
+    genMap.put(PantheraParser_PLSQLParser.LAST_VALUE_VK, new FuncTextGenerator());  // windowing function last_value
+    genMap.put(PantheraParser_PLSQLParser.OVER_VK, new OverTextGenerator());  // over keyword for windowing function
     genMap.put(PantheraParser_PLSQLParser.ARGUMENTS, new ListTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.ARGUMENT, new NothingTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING, new RootFirstTextGenerator());
@@ -102,7 +107,7 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.SOLIDUS, new BiOpTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.UNARY_OPERATOR, new UnaryOperatorTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.JOIN_DEF, new JoinTextGenerator());
-    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_UNION, new RootFirstTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_UNION, new UnionTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.IS_NOT_NULL, new IsNotNullTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.IS_NULL, new IsNullTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_ALL, new FuncTextGenerator());
@@ -131,8 +136,13 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.REGULAR_ID, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.SUBSTRING_VK, new MulFuncTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_DATE, new NothingTextGenerator());
-    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_BETWEEN, new NaiveTextGenerator());//X
-    genMap.put(PantheraParser_PLSQLParser.NOT_BETWEEN, new NaiveTextGenerator());//X
+    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_BETWEEN, new BetweenTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.ROWS_VK, new RootFirstTextGenerator());  // rows keyword, for window specification.
+    genMap.put(PantheraParser_PLSQLParser.ROW_VK, new RootFirstTextGenerator());  // row keyword, used in window function related.  e.g. "current row"
+    genMap.put(PantheraParser_PLSQLParser.PRECEDING_VK, new RootLastTextGenerator());  // preceding
+    genMap.put(PantheraParser_PLSQLParser.FOLLOWING_VK, new RootLastTextGenerator());  // following
+    genMap.put(PantheraParser_PLSQLParser.UNBOUNDED_VK, new RootFirstTextGenerator());  // unbounded
+    genMap.put(PantheraParser_PLSQLParser.SQL92_RESERVED_CURRENT, new RootFirstTextGenerator()); // current
     genMap.put(PantheraExpParser.LIMIT_VK, new RootFirstTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.SEARCHED_CASE, new SearchedCaseTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.NOT_LIKE, new NotLikeTextGenerator());
@@ -151,6 +161,7 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.SECOND_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.LEFT_PAREN, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.RIGHT_PAREN, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.CONCATENATION_OP, new ConcatenationOpTextGenerator());
   }
 
   private TextGeneratorFactory() {

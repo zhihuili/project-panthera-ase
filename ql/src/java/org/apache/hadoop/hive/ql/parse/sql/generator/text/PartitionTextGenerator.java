@@ -18,31 +18,29 @@
 package org.apache.hadoop.hive.ql.parse.sql.generator.text;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
 /**
- * generate like Function(...) .<br>
- * FuncTextGenerator.
+ * TextGenerator for "partition" keyword.
+ * write down the symbol and then pass down.
+ * PartitionTextGenerator.
  *
  */
-public class FuncTextGenerator extends BaseTextGenerator {
+public class PartitionTextGenerator extends BaseTextGenerator {
 
   @Override
   protected String textGenerate(CommonTree root, TranslateContext context) throws Exception {
-    if (root.getChildCount() < 2) {
-      return root.getText() + "(" + textGenerateChild(root, context) + ")";
-    } else if (root.getChildCount() == 2) {  // e.g. select max(col1) over() from ...
-      CommonTree op1 = (CommonTree) root.getChild(0);
-      QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
-
-      CommonTree op2 = (CommonTree) root.getChild(1);
-      QueryTextGenerator qr2 = TextGeneratorFactory.getTextGenerator(op2);
-      return root.getText() + "(" + qr1.textGenerateQuery(op1, context) + ") "
-          + qr2.textGenerateQuery(op2, context);
-    } else {
-      throw new SqlXlateException(root, "Unsupported function type!");
+    String ret = "partition by ";
+    for (int i = 0; i < root.getChildCount(); i++) {
+      // on odd child node, it's "EXPR" node, and on even child node will be the partition column.
+      if (i % 2 != 0 && i != 1) {
+        ret += ", ";
+      }
+      CommonTree childNode = (CommonTree) root.getChild(i);
+      QueryTextGenerator childGen = TextGeneratorFactory.getTextGenerator(childNode);
+      ret += childGen.textGenerateQuery(childNode, context);
     }
+    return ret;
   }
 
 }

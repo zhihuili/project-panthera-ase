@@ -15,34 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hive.ql.parse.sql.generator.text;
+package org.apache.hadoop.hive.ql.parse.sql.generator;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
 /**
- * generate like Function(...) .<br>
- * FuncTextGenerator.
- *
+ * Generator for "unbounded" keyword.
+ * e.g. select max(s_grade) over(partition by s_empname order by s_city rows unbounded preceding) from staff;
+ * UnboundedGenerator.
  */
-public class FuncTextGenerator extends BaseTextGenerator {
+public class UnboundedGenerator extends BaseHiveASTGenerator {
 
   @Override
-  protected String textGenerate(CommonTree root, TranslateContext context) throws Exception {
-    if (root.getChildCount() < 2) {
-      return root.getText() + "(" + textGenerateChild(root, context) + ")";
-    } else if (root.getChildCount() == 2) {  // e.g. select max(col1) over() from ...
-      CommonTree op1 = (CommonTree) root.getChild(0);
-      QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
-
-      CommonTree op2 = (CommonTree) root.getChild(1);
-      QueryTextGenerator qr2 = TextGeneratorFactory.getTextGenerator(op2);
-      return root.getText() + "(" + qr1.textGenerateQuery(op1, context) + ") "
-          + qr2.textGenerateQuery(op2, context);
-    } else {
-      throw new SqlXlateException(root, "Unsupported function type!");
-    }
+  public boolean generate(ASTNode hiveRoot, CommonTree sqlRoot, ASTNode currentHiveNode,
+      CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
+    return super.baseProcess(HiveParser.KW_UNBOUNDED, "unbounded", hiveRoot, sqlRoot, currentHiveNode, currentSqlNode, context);
   }
 
 }

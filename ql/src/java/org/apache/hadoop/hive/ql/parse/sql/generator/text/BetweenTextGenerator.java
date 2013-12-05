@@ -18,31 +18,27 @@
 package org.apache.hadoop.hive.ql.parse.sql.generator.text;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
 /**
- * generate like Function(...) .<br>
- * FuncTextGenerator.
+ * write root text, then left child and then write down "and" then right child
+ * only "between" in "over" clause (window function related) will in Generator,
+ * between in other places will be transformed in BetweenTransformer.
+ * BetweenTextGenerator.
  *
  */
-public class FuncTextGenerator extends BaseTextGenerator {
+public class BetweenTextGenerator extends BaseTextGenerator {
 
   @Override
   protected String textGenerate(CommonTree root, TranslateContext context) throws Exception {
-    if (root.getChildCount() < 2) {
-      return root.getText() + "(" + textGenerateChild(root, context) + ")";
-    } else if (root.getChildCount() == 2) {  // e.g. select max(col1) over() from ...
-      CommonTree op1 = (CommonTree) root.getChild(0);
-      QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
+    assert (root.getChildCount() == 2);
 
-      CommonTree op2 = (CommonTree) root.getChild(1);
-      QueryTextGenerator qr2 = TextGeneratorFactory.getTextGenerator(op2);
-      return root.getText() + "(" + qr1.textGenerateQuery(op1, context) + ") "
-          + qr2.textGenerateQuery(op2, context);
-    } else {
-      throw new SqlXlateException(root, "Unsupported function type!");
-    }
+    CommonTree op1 = (CommonTree) root.getChild(0);
+    QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
+
+    CommonTree op2 = (CommonTree) root.getChild(1);
+    QueryTextGenerator qr2 = TextGeneratorFactory.getTextGenerator(op2);
+    return root.getText() + " " + qr1.textGenerateQuery(op1, context) + " and "
+        + qr2.textGenerateQuery(op2, context);
   }
-
 }

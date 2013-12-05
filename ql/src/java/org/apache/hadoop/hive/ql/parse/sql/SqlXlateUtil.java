@@ -239,7 +239,11 @@ public final class SqlXlateUtil {
           name = tableViewName.getChild(0).getText();
           if (tableViewName.getChildCount() > 1) {
             // schema.table
+            // for HIVE 0.9, 'name' should be in format of "schema.table"
             name += ("." + tableViewName.getChild(1).getText());
+            // for HIVE version higher than HIVE 0.9.0, 'name' should be in format of "table"
+            // Please refer to HIVE-2721, which is committed on Apr 26th, 2012 in apache/hive github.
+            //name = tableViewName.getChild(1).getText();
           }
           if (alias == null) {
             alias = name;
@@ -746,6 +750,8 @@ public final class SqlXlateUtil {
         }
       } catch (HiveException e) {
         throw new SqlXlateException(null, "HiveException thrown : " + e);
+      } catch (Exception e) {
+        throw new SqlXlateException(null, "Hive metastore excption encountered, tables or columns are not valid!");
       }
     }
 

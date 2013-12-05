@@ -62,6 +62,11 @@ public class OrderByNotInSelectListTransformer extends BaseSqlASTTransformer {
       throws SqlXlateException {
 
     CommonTree selectStatement = (CommonTree) order.getParent();
+    // order by branch may not under SELECT_STATEMENT node, order by might be in over clause.
+    // e.g. over(order by col1).
+    if (selectStatement.getType() != PantheraParser_PLSQLParser.SELECT_STATEMENT) {
+      return;
+    }
     CommonTree select = (CommonTree) ((CommonTree) selectStatement
         .getFirstChildWithType(PantheraParser_PLSQLParser.SUBQUERY))
         .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);

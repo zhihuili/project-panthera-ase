@@ -26,7 +26,7 @@ public class SimpleCaseTextGenerator extends BaseTextGenerator {
   @Override
   protected String textGenerate(CommonTree root, TranslateContext context) throws Exception {
     String retString = "(case ";
-    if (!(root.getChildCount()>=3)) {
+    if (!(root.getChildCount() >= 2)) {
       throw new SqlParseException("Parameters error in simple case expression.");
     }
     if (!(root.getChild(0) instanceof org.antlr.runtime.tree.CommonTree)) {
@@ -65,6 +65,7 @@ public class SimpleCaseTextGenerator extends BaseTextGenerator {
         retString += " " ;
       }
     }
+    retString += "end)";
     return retString;
   }
 

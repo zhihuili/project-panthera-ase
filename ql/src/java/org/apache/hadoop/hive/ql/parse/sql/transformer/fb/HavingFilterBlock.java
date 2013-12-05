@@ -18,8 +18,11 @@
 package org.apache.hadoop.hive.ql.parse.sql.transformer.fb;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.Stack;
 
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
@@ -31,6 +34,9 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
 
 
 public class HavingFilterBlock extends TypeFilterBlock {
+
+  private int selectStackSize;
+  private Set<CommonTree> notRefreshNode;
 
   @Override
   void execute(FilterBlockContext fbContext, TranslateContext context) throws SqlXlateException {
@@ -44,8 +50,7 @@ public class HavingFilterBlock extends TypeFilterBlock {
     QueryBlock topQuery = fbContext.getQueryStack().peek();
 
     CommonTree group = (CommonTree) topQuery.getASTNode().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
-    List<CommonTree> ss = new ArrayList<CommonTree>();
-    FilterBlockUtil.findNode(group, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, ss);
+    CommonTree having = (CommonTree) group.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING);
 
     // delete having. DO it before clone.
     FilterBlockUtil.deleteBranch((CommonTree) topQuery.getASTNode().getFirstChildWithType(
@@ -58,7 +63,6 @@ public class HavingFilterBlock extends TypeFilterBlock {
     topQuery.setHaving(true);
 
     CommonTree oldSelect = topQuery.cloneTransformedQuery();
-    CommonTree oldFrom = (CommonTree) oldSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
     CommonTree newSelect = FilterBlockUtil.createSqlASTNode(oldSelect, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, "select");
     String tablename = FilterBlockUtil.makeSelectBranch(newSelect, oldSelect, context);
     CommonTree oldSelectList = (CommonTree) oldSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
@@ -70,27 +74,84 @@ public class HavingFilterBlock extends TypeFilterBlock {
     CommonTree newSelectList = cloneSelectListByAliasFromSelect(oldSelect, tablename, context);
     newSelect.addChild(newSelectList);
     addAllAggrFilter(tablename, oldSelectList, fbContext, context);
-    for (CommonTree littleSel : ss) {
-      // refresh table name. only can be done after add all AggrFilter
-      CommonTree littleFrom = (CommonTree) littleSel.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
-      List<CommonTree> anyL = new ArrayList<CommonTree>();
-      FilterBlockUtil.findNode(littleSel, PantheraParser_PLSQLParser.ANY_ELEMENT, anyL);
-      for (CommonTree anyE : anyL) {
-        if (anyE.getChildCount() == 2) {
-          String tn = anyE.getChild(0).getText();
-          if (SqlXlateUtil.containTableName(tn, oldFrom) && !SqlXlateUtil.containTableName(tn, littleFrom)) {
-            //FIXME not all should be replaced
-            ((CommonTree) anyE.getChild(0)).getToken().setText(tablename);
-          }
-        }
-      }
-    }
+    selectStackSize = fbContext.getSelectStack().size();
+    notRefreshNode = getAllUncorrelatedFilterNodes(this);
+    refreshTableAliasInHaving(having, fbContext.getSelectStack(), fbContext, tablename);
     CommonTree oldGroup = (CommonTree) oldSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
     assert(oldGroup != null);
     addGroupElement(oldSelectList, oldGroup, fbContext, context);
     topQuery.setQueryForTransfer(newSelect);
     topQuery.setRebuildQueryForTransfer();
     topQuery.setQueryForHaving(newSelect);
+    fbContext.getSelectStack().pop();
+    fbContext.getSelectStack().push(newSelect);
+  }
+
+  private Set<CommonTree> getAllUncorrelatedFilterNodes(FilterBlock fb) {
+    Set<CommonTree> ret = new HashSet<CommonTree>();
+    for (FilterBlock childFB : fb.getChildren()) {
+      if (childFB instanceof SubQFilterBlock) {
+        continue;
+      } else if (childFB instanceof UnCorrelatedFilterBlock) {
+        CommonTree tree = childFB.getASTNode();
+        List<CommonTree> list = new ArrayList<CommonTree>();
+        FilterBlockUtil.findNode(tree, PantheraParser_PLSQLParser.ANY_ELEMENT, list);
+        ret.addAll(list);
+      } else {
+        ret.addAll(getAllUncorrelatedFilterNodes(childFB));
+      }
+    }
+    return ret;
+  }
+
+  /**
+   * TODO not refresh table alias in subQuery's uncorrelated filters.
+   * @param having
+   * @param fbContext
+   * @param context
+   * @throws SqlXlateException
+   */
+  private void refreshTableAliasInHaving(CommonTree tree, Stack<CommonTree> selectStack, FilterBlockContext fbContext, String tablename) throws SqlXlateException {
+    switch(tree.getType()) {
+    case PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT:
+      selectStack.push(tree);
+      for (int i = 0; i < tree.getChildCount(); i++) {
+        refreshTableAliasInHaving((CommonTree) tree.getChild(i), selectStack, fbContext, tablename);
+      }
+      selectStack.pop();
+      break;
+    case PantheraParser_PLSQLParser.SQL92_RESERVED_FROM:
+    case PantheraParser_PLSQLParser.SELECT_LIST:
+      // FROM and SELECT_LIST do not need a refresh.
+      break;
+    case PantheraParser_PLSQLParser.ANY_ELEMENT:
+      for (CommonTree nf : fbContext.getQueryStack().peek().getHavingFilterColumns()) {
+        // here new having filters are all CascatedElement, cloned from true ones
+        if (FilterBlockUtil.equalsTree(nf, (CommonTree) tree.getParent())) {
+          return;
+        }
+      }
+      int level = PLSQLFilterBlockFactory.getInstance().isAnyElementCorrelated(fbContext.getqInfo(), selectStack, tree);
+      if (selectStack.size() - level == this.selectStackSize) {
+        // this is a reference to this level.
+        if (tree.getChildCount() == 2) {
+          if (!notRefreshNode.contains(tree)) {
+            ((CommonTree) tree.getChild(0)).getToken().setText(tablename);
+          }
+          FilterBlock possibleWhereFB = this.getParent().getChildren().get(0);
+          if (notRefreshNode.contains(tree) && possibleWhereFB instanceof WhereFilterBlock) {
+            CommonTree subT = ((WhereFilterBlock) possibleWhereFB).getSubTable();
+            ((CommonTree) tree.getChild(0)).getToken().setText(subT.getText());
+          }
+        }
+      }
+      break;
+    default:
+      for (int i = 0; i < tree.getChildCount(); i++) {
+        refreshTableAliasInHaving((CommonTree) tree.getChild(i), selectStack, fbContext, tablename);
+      }
+      break;
+    }
   }
 
   /**

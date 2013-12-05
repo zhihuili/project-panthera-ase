@@ -35,7 +35,7 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  * translate [xx not in (select max(x) from t1 where ...)] to [xx <> (select max(x) from t1 where
  * ...)] <br/>
  * InTransformer.
- * 
+ *
  */
 public class InTransformer extends BaseSqlASTTransformer {
   SqlASTTransformer tf;
@@ -90,6 +90,7 @@ public class InTransformer extends BaseSqlASTTransformer {
     CommonTree rightIn = (CommonTree) bottomSelectList.getChild(0).getChild(0).getChild(0);
     List<CommonTree> sfList = new ArrayList<CommonTree>();
     FilterBlockUtil.findNode(rightIn, PantheraParser_PLSQLParser.STANDARD_FUNCTION, sfList);
+    // TODO ugly hard code
     Set<String> aggregation = new HashSet<String>();
     aggregation.add("max");
     aggregation.add("min");

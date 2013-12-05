@@ -89,6 +89,7 @@ import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContext;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContextImpl;
 import org.apache.hadoop.hive.ql.parse.ImportSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
+import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
@@ -417,100 +418,216 @@ public class Driver implements CommandProcessor {
     saveSession(queryState);
 
     try {
-      command = new VariableSubstitution().substitute(conf,command);
-      ctx = new Context(conf);
-      ctx.setTryCount(getTryCount());
-      ctx.setCmd(command);
-      ctx.setHDFSCleanup(true);
+      try {
+        command = new VariableSubstitution().substitute(conf, command);
+        ctx = new Context(conf);
+        ctx.setTryCount(getTryCount());
+        ctx.setCmd(command);
+        ctx.setHDFSCleanup(true);
 
-      perfLogger.PerfLogBegin(LOG, PerfLogger.PARSE);
-      // use SqlParse directly, in which SQL Parser will be called first, then Hive Parser if SQL
-      // Parser failed.
-      SqlParseDriver pd = new SqlParseDriver(conf);
-      ASTNode tree = pd.parse(command, ctx);
-      tree = ParseUtils.findRootNonNullToken(tree);
-      perfLogger.PerfLogEnd(LOG, PerfLogger.PARSE);
+        perfLogger.PerfLogBegin(LOG, PerfLogger.PARSE);
+        // use SqlParse directly, in which SQL Parser will be called first, then Hive Parser if SQL
+        // Parser failed.
+        SqlParseDriver pd = new SqlParseDriver(conf);
+        ASTNode tree = pd.parse(command, ctx);
+        tree = ParseUtils.findRootNonNullToken(tree);
+        perfLogger.PerfLogEnd(LOG, PerfLogger.PARSE);
 
-      perfLogger.PerfLogBegin(LOG, PerfLogger.ANALYZE);
-      BaseSemanticAnalyzer sem = SemanticAnalyzerFactory.get(conf, tree);
-      List<HiveSemanticAnalyzerHook> saHooks =
-          getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,
-              HiveSemanticAnalyzerHook.class);
+        perfLogger.PerfLogBegin(LOG, PerfLogger.ANALYZE);
+        BaseSemanticAnalyzer sem = SemanticAnalyzerFactory.get(conf, tree);
+        List<HiveSemanticAnalyzerHook> saHooks =
+            getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,
+                HiveSemanticAnalyzerHook.class);
 
-      // Do semantic analysis and plan generation
-      if (saHooks != null) {
-        HiveSemanticAnalyzerHookContext hookCtx = new HiveSemanticAnalyzerHookContextImpl();
-        hookCtx.setConf(conf);
-        for (HiveSemanticAnalyzerHook hook : saHooks) {
-          tree = hook.preAnalyze(hookCtx, tree);
+        // Do semantic analysis and plan generation
+        if (saHooks != null) {
+          HiveSemanticAnalyzerHookContext hookCtx = new HiveSemanticAnalyzerHookContextImpl();
+          hookCtx.setConf(conf);
+          for (HiveSemanticAnalyzerHook hook : saHooks) {
+            tree = hook.preAnalyze(hookCtx, tree);
+          }
+          sem.analyze(tree, ctx);
+          hookCtx.update(sem);
+          for (HiveSemanticAnalyzerHook hook : saHooks) {
+            hook.postAnalyze(hookCtx, sem.getRootTasks());
+          }
+        } else {
+          sem.analyze(tree, ctx);
         }
-        sem.analyze(tree, ctx);
-        hookCtx.update(sem);
-        for (HiveSemanticAnalyzerHook hook : saHooks) {
-          hook.postAnalyze(hookCtx, sem.getRootTasks());
+
+        LOG.info("Semantic Analysis Completed");
+
+        // validate the plan
+        sem.validate();
+        perfLogger.PerfLogEnd(LOG, PerfLogger.ANALYZE);
+
+        plan = new QueryPlan(command, sem, perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
+
+        // test Only - serialize the query plan and deserialize it
+        if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
+
+          String queryPlanFileName = ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR
+              + "queryplan.xml";
+          LOG.info("query plan = " + queryPlanFileName);
+          queryPlanFileName = new Path(queryPlanFileName).toUri().getPath();
+
+          // serialize the queryPlan
+          FileOutputStream fos = new FileOutputStream(queryPlanFileName);
+          Utilities.serializeObject(plan, fos);
+          fos.close();
+
+          // deserialize the queryPlan
+          FileInputStream fis = new FileInputStream(queryPlanFileName);
+          QueryPlan newPlan = Utilities.deserializeObject(fis);
+          fis.close();
+
+          // Use the deserialized plan
+          plan = newPlan;
         }
-      } else {
-        sem.analyze(tree, ctx);
-      }
 
-      LOG.info("Semantic Analysis Completed");
+        // initialize FetchTask right here
+        if (plan.getFetchTask() != null) {
+          plan.getFetchTask().initialize(conf, plan, null);
+        }
 
-      // validate the plan
-      sem.validate();
-      perfLogger.PerfLogEnd(LOG, PerfLogger.ANALYZE);
+        // get the output schema
+        schema = getSchema(sem, conf);
 
-      plan = new QueryPlan(command, sem, perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
+        // do the authorization check
+        if (HiveConf.getBoolVar(conf,
+            HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
+          try {
+            perfLogger.PerfLogBegin(LOG, PerfLogger.DO_AUTHORIZATION);
+            doAuthorization(sem);
+          } catch (AuthorizationException authExp) {
+            errorMessage = "Authorization failed:" + authExp.getMessage()
+                + ". Use show grant to get more details.";
+            console.printError(errorMessage);
+            return 403;
+          } finally {
+            perfLogger.PerfLogEnd(LOG, PerfLogger.DO_AUTHORIZATION);
+          }
+        }
 
-      // test Only - serialize the query plan and deserialize it
-      if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
+        // restore state after we're done executing a specific query
 
-        String queryPlanFileName = ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR
-            + "queryplan.xml";
-        LOG.info("query plan = " + queryPlanFileName);
-        queryPlanFileName = new Path(queryPlanFileName).toUri().getPath();
+        return 0;
+      } catch (SemanticException semanticException) {
+        command = new VariableSubstitution().substitute(conf,command);
+        ctx = new Context(conf);
+        ctx.setTryCount(getTryCount());
+        ctx.setCmd(command);
+        ctx.setHDFSCleanup(true);
 
-        // serialize the queryPlan
-        FileOutputStream fos = new FileOutputStream(queryPlanFileName);
-        Utilities.serializeObject(plan, fos);
-        fos.close();
+        perfLogger.PerfLogBegin(LOG, PerfLogger.PARSE);
 
-        // deserialize the queryPlan
-        FileInputStream fis = new FileInputStream(queryPlanFileName);
-        QueryPlan newPlan = Utilities.deserializeObject(fis);
-        fis.close();
-
-        // Use the deserialized plan
-        plan = newPlan;
-      }
-
-      // initialize FetchTask right here
-      if (plan.getFetchTask() != null) {
-        plan.getFetchTask().initialize(conf, plan, null);
-      }
-
-      // get the output schema
-      schema = getSchema(sem, conf);
-
-      //do the authorization check
-      if (HiveConf.getBoolVar(conf,
-          HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
+        // do again, may be semantic exception is triggered from SQL parser, then try Hive parser again.
+        // for second time to execute these code, only use HIVE parser, since SQL parser must be tested.
+        SqlParseDriver pd = new SqlParseDriver(conf);
+        ASTNode tree = null;
         try {
-          perfLogger.PerfLogBegin(LOG, PerfLogger.DO_AUTHORIZATION);
-          doAuthorization(sem);
-        } catch (AuthorizationException authExp) {
-          errorMessage = "Authorization failed:" + authExp.getMessage()
-          + ". Use show grant to get more details.";
-          console.printError(errorMessage);
-          return 403;
-        } finally {
-          perfLogger.PerfLogEnd(LOG, PerfLogger.DO_AUTHORIZATION);
+          tree = pd.parse(command, ctx, true);
+        } catch (ParseException parseException) {
+          //
+          // if reEntry the parse, and get ParseException, that means HIVE Paser can
+          // not parse the query while SQL Parser can, then throw SemanticException
+          //
+          throw semanticException;
+        }
+
+        try {
+          tree = ParseUtils.findRootNonNullToken(tree);
+          perfLogger.PerfLogEnd(LOG, PerfLogger.PARSE);
+
+          perfLogger.PerfLogBegin(LOG, PerfLogger.ANALYZE);
+          BaseSemanticAnalyzer sem = SemanticAnalyzerFactory.get(conf, tree);
+          List<HiveSemanticAnalyzerHook> saHooks =
+              getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,
+                  HiveSemanticAnalyzerHook.class);
+
+          // Do semantic analysis and plan generation
+          if (saHooks != null) {
+            HiveSemanticAnalyzerHookContext hookCtx = new HiveSemanticAnalyzerHookContextImpl();
+            hookCtx.setConf(conf);
+            for (HiveSemanticAnalyzerHook hook : saHooks) {
+              tree = hook.preAnalyze(hookCtx, tree);
+            }
+            sem.analyze(tree, ctx);
+            hookCtx.update(sem);
+            for (HiveSemanticAnalyzerHook hook : saHooks) {
+              hook.postAnalyze(hookCtx, sem.getRootTasks());
+            }
+          } else {
+            sem.analyze(tree, ctx);
+          }
+
+          LOG.info("Semantic Analysis Completed");
+
+          // validate the plan
+          sem.validate();
+          perfLogger.PerfLogEnd(LOG, PerfLogger.ANALYZE);
+
+          plan = new QueryPlan(command, sem, perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
+
+          // test Only - serialize the query plan and deserialize it
+          if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
+
+            String queryPlanFileName = ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR
+                + "queryplan.xml";
+            LOG.info("query plan = " + queryPlanFileName);
+            queryPlanFileName = new Path(queryPlanFileName).toUri().getPath();
+
+            // serialize the queryPlan
+            FileOutputStream fos = new FileOutputStream(queryPlanFileName);
+            Utilities.serializeObject(plan, fos);
+            fos.close();
+
+            // deserialize the queryPlan
+            FileInputStream fis = new FileInputStream(queryPlanFileName);
+            QueryPlan newPlan = Utilities.deserializeObject(fis);
+            fis.close();
+
+            // Use the deserialized plan
+            plan = newPlan;
+          }
+
+          // initialize FetchTask right here
+          if (plan.getFetchTask() != null) {
+            plan.getFetchTask().initialize(conf, plan, null);
+          }
+
+          // get the output schema
+          schema = getSchema(sem, conf);
+
+          //do the authorization check
+          if (HiveConf.getBoolVar(conf,
+              HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
+            try {
+              perfLogger.PerfLogBegin(LOG, PerfLogger.DO_AUTHORIZATION);
+              doAuthorization(sem);
+            } catch (AuthorizationException authExp) {
+              errorMessage = "Authorization failed:" + authExp.getMessage()
+                      + ". Use show grant to get more details.";
+              console.printError(errorMessage);
+              return 403;
+            } finally {
+              perfLogger.PerfLogEnd(LOG, PerfLogger.DO_AUTHORIZATION);
+            }
+          }
+
+          //restore state after we're done executing a specific query
+
+          return 0;
+        } catch (SemanticException hiveSemanticEx) {
+          //
+          // if use HIVE Parser still get SemanticException, then still throw SemanticException
+          // which is throw from the first time of choosing Parser. Since that semanticeException
+          // can either throw from SQL Parser or HIVE Parser while this hiveSemanticEx would only
+          // thrown from HIVE Parser.
+          //
+          throw semanticException;
         }
       }
-
-      // restore state after we're done executing a specific query
-
-      return 0;
-
     } catch (SqlParseException e) {
       errorMessage = "FAILED: SQL Parse Error: " + e.getMessage();
       SQLState = ErrorMsg.findSQLState(e.getMessage());

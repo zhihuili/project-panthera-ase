@@ -23,22 +23,25 @@ import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
-public class IdGenerator extends BaseHiveASTGenerator {
+/**
+ * Generator for "following" keyword
+ * e.g. select max(s_grade) over(partition by s_empname order by s_city rows between 3 preceding and 3 following) from staff;
+ * FollowingGenerator.
+ */
+public class FollowingGenerator extends BaseHiveASTGenerator {
 
   @Override
   public boolean generate(ASTNode hiveRoot, CommonTree sqlRoot, ASTNode currentHiveNode,
       CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
     ASTNode ret;
     String text = currentSqlNode.getText();
-    if (currentSqlNode.getText().contains("\"") || currentSqlNode.getText().contains("'")) {
-      ret = super.newHiveASTNode(HiveParser.StringLiteral, currentSqlNode.getText());
-    } else if (currentSqlNode.getText().toLowerCase().equals("null")) {
-      ret = super.newHiveASTNode(HiveParser.TOK_NULL, "TOK_NULL");
-    } else {
-      ret = super.newHiveASTNode(HiveParser.Identifier, text);
+    ret = super.newHiveASTNode(HiveParser.KW_FOLLOWING, text);
+    if (currentHiveNode.getText().equals("unbounded")) {
+      currentHiveNode.getToken().setText(text);
+      currentHiveNode.getToken().setType(ret.getType());
+      ret = super.newHiveASTNode(HiveParser.KW_UNBOUNDED, "unbounded");
     }
     super.attachHiveNode(hiveRoot, currentHiveNode, ret);
-    // even if the node is leaf, still can call generateChildren.
     return super.generateChildren(hiveRoot, sqlRoot, ret, currentSqlNode, context);
   }
 

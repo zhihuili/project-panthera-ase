@@ -21,25 +21,32 @@ import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
+import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
-public class IdGenerator extends BaseHiveASTGenerator {
+import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
+
+/**
+ * Generator for "over" keyword
+ * e.g. select max(s_grade) over() from staff;
+ * OverGenerator.
+ */
+public class OverGenerator extends BaseHiveASTGenerator {
 
   @Override
   public boolean generate(ASTNode hiveRoot, CommonTree sqlRoot, ASTNode currentHiveNode,
       CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
-    ASTNode ret;
-    String text = currentSqlNode.getText();
-    if (currentSqlNode.getText().contains("\"") || currentSqlNode.getText().contains("'")) {
-      ret = super.newHiveASTNode(HiveParser.StringLiteral, currentSqlNode.getText());
-    } else if (currentSqlNode.getText().toLowerCase().equals("null")) {
-      ret = super.newHiveASTNode(HiveParser.TOK_NULL, "TOK_NULL");
-    } else {
-      ret = super.newHiveASTNode(HiveParser.Identifier, text);
+    ASTNode winSpec = SqlXlateUtil.newASTNode(HiveParser.TOK_WINDOWSPEC, "TOK_WINDOWSPEC");
+    super.attachHiveNode(hiveRoot, currentHiveNode, winSpec);
+    if (currentSqlNode.getChildCount() == 0
+        // for case "over w1" where w1 is window alias. (Currently SQLParser doesn't support this syntax)
+        // e.g. select s_grade, min(s_city) over w1 from staff window w1 as (distribute by s_grade);
+        || (currentSqlNode.getChildCount() == 1
+            && currentSqlNode.getChild(0).getType() == PantheraParser_PLSQLParser.ID)) {
+      return super.generateChildren(hiveRoot, sqlRoot, winSpec, currentSqlNode, context);
     }
-    super.attachHiveNode(hiveRoot, currentHiveNode, ret);
-    // even if the node is leaf, still can call generateChildren.
+    ASTNode ret = SqlXlateUtil.newASTNode(HiveParser.TOK_PARTITIONINGSPEC, "TOK_PARTITIONINGSPEC");
+    super.attachHiveNode(hiveRoot, winSpec, ret);
     return super.generateChildren(hiveRoot, sqlRoot, ret, currentSqlNode, context);
   }
-
 }

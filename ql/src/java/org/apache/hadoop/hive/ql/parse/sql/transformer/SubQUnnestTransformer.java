@@ -69,7 +69,6 @@ public class SubQUnnestTransformer extends BaseSqlASTTransformer {
     QueryInfo qInfo = context.getQInfoRoot();
     transformQInfoDeepFirst(qInfo, context);
 
-
   }
 
   void transformQInfoDeepFirst(QueryInfo qf, TranslateContext context) throws SqlXlateException {
@@ -91,12 +90,8 @@ public class SubQUnnestTransformer extends BaseSqlASTTransformer {
 
   void transformFilterBlock(QueryInfo qf, TranslateContext context) throws SqlXlateException {
     if (!this.hasSubQuery(qf)) {
-      if (qf.getFilterBlockTreeRoot().getASTNode()
-          .getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST) != null
-          || qf.getChildren().size() > 0 || qf.getParentQueryInfo().getParentQueryInfo() == null) {
-        LOG.info("skip subq transform:" + qf.toStringTree());
-        return;
-      }
+      LOG.info("skip subq transform:" + qf.toStringTree());
+      return;
     }
     FilterBlock fb = qf.getFilterBlockTreeRoot();
     if (!(fb instanceof QueryBlock)) {
@@ -184,18 +179,6 @@ public class SubQUnnestTransformer extends BaseSqlASTTransformer {
     this.rebuildAnyElement((CommonTree) select
         .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP), selectListStrList,
         selectList);
-
-    // ORDER_BY
-    CommonTree subQuery = (CommonTree) select.getParent();
-    if (subQuery != null) {
-      CommonTree selectStatement = (CommonTree) subQuery.getParent();
-      if (selectStatement != null
-          && selectStatement.getType() == PantheraParser_PLSQLParser.SELECT_STATEMENT) {
-        CommonTree order = (CommonTree) selectStatement
-            .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_ORDER);
-        this.rebuildAnyElement(order, selectListStrList, selectList);
-      }
-    }
   }
 
   private void rebuildAnyElement(CommonTree targetNode, List<List<String>> selectListStrList,

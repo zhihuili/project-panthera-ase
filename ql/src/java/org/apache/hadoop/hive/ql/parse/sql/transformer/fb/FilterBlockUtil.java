@@ -155,6 +155,19 @@ public class FilterBlockUtil {
     return aggregationList;
   }
 
+  public static void findAllSelectForSet(CommonTree subQuery, List<CommonTree> nodeList) {
+    if (subQuery.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
+      nodeList.add(subQuery);
+    } else if (subQuery.getType() == PantheraParser_PLSQLParser.SUBQUERY) {
+      if (subQuery.getChildCount() == 1) {
+        nodeList.add((CommonTree) subQuery.getChild(0));
+      } else {
+        findAllSelectForSet((CommonTree) subQuery.getChild(0), nodeList);
+        findAllSelectForSet((CommonTree) subQuery.getChild(1).getChild(0), nodeList);
+      }
+    }
+  }
+
   /**
    * find all node which type is input type in the tree which root is node.
    *
@@ -171,6 +184,25 @@ public class FilterBlockUtil {
     }
     for (int i = 0; i < node.getChildCount(); i++) {
       findNode((CommonTree) node.getChild(i), type, nodeList);
+    }
+  }
+
+  /**
+   * find all node which structure is same as the other tree.
+   *
+   * @param node
+   * @param criteria
+   * @param nodeList
+   */
+  public static void findSubTree(CommonTree node, CommonTree criteria, List<CommonTree> nodeList) {
+    if (node == null) {
+      return;
+    }
+    if (equalsTree(node, criteria)) {
+      nodeList.add(node);
+    }
+    for (int i = 0; i < node.getChildCount(); i++) {
+      findSubTree((CommonTree) node.getChild(i), criteria, nodeList);
     }
   }
 
@@ -447,10 +479,11 @@ public class FilterBlockUtil {
   }
 
   /**
-   * clone SELECT_LIST by SELECT_ITEM ALIAS
+   * clone SELECT_LIST by SELECT_ITEM ALIAS<br>
+   * call this method after make sure select item all has alias<br>
    *
    * @param originalSelectList
-   * @return
+   * @return new built selectList
    */
   public static CommonTree cloneSelectListByAliasFromSelect(CommonTree originalSelect) {
     CommonTree selectList;
@@ -460,7 +493,6 @@ public class FilterBlockUtil {
       int selectNum = originalSelectList.getChildCount();
       selectList = createSqlASTNode(originalSelectList, PantheraExpParser.SELECT_LIST,
           "SELECT_LIST");
-      int count = 0;
       for (int i = 0; i < selectNum; i++) {
         CommonTree originalAlias = (CommonTree) originalSelectList.getChild(i).getChild(1);
         CommonTree selectItem = dupNode((CommonTree) originalSelectList.getChild(i));
@@ -472,23 +504,14 @@ public class FilterBlockUtil {
         CommonTree anyElement = createSqlASTNode(selectItem, PantheraExpParser.ANY_ELEMENT,
             "ANY_ELEMENT");
         cascatedElement.addChild(anyElement);
-
-        String columnName;
-        CommonTree coloumNameSrc;
-        if (originalAlias != null) {
-          columnName = originalAlias.getChild(0).getText();
-          coloumNameSrc = (CommonTree) originalAlias.getChild(0);
-
-          CommonTree alias = dupNode(originalAlias);
-          CommonTree aliasName = createSqlASTNode(coloumNameSrc, PantheraParser_PLSQLParser.ID,
-              columnName);
-          alias.addChild(aliasName);
-          selectItem.addChild(alias);
-        } else {
-          columnName = PREFIX_COLUMN_ALIAS + count++;
-          coloumNameSrc = anyElement;
-
-        }
+        assert(originalAlias != null);
+        String columnName = originalAlias.getChild(0).getText();
+        CommonTree coloumNameSrc = (CommonTree) originalAlias.getChild(0);
+        CommonTree alias = dupNode(originalAlias);
+        CommonTree aliasName = createSqlASTNode(coloumNameSrc, PantheraParser_PLSQLParser.ID,
+            columnName);
+        alias.addChild(aliasName);
+        selectItem.addChild(alias);
         CommonTree columnId = createSqlASTNode(coloumNameSrc, PantheraExpParser.ID, columnName);
         anyElement.addChild(columnId);
         selectList.addChild(selectItem);
@@ -576,12 +599,11 @@ public class FilterBlockUtil {
       return null;
     }
     List<CommonTree> result = new ArrayList<CommonTree>();
-    int count = 0;
     for (int i = 0; i < selectList.getChildCount(); i++) {
       CommonTree selectItem = (CommonTree) selectList.getChild(i);
       if (selectItem.getChildCount() == 1) {
         CommonTree anyElement = (CommonTree) selectItem.getChild(0).getChild(0).getChild(0);
-        String columnStr = null;
+        String columnStr = "pantehra_expr_" + i;
         if (anyElement != null && anyElement.getType() == PantheraExpParser.ANY_ELEMENT) {
           columnStr = anyElement.getChildCount() == 1 ? anyElement.getChild(0).getText()
               : anyElement.getChild(1).getText();

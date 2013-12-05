@@ -19,6 +19,7 @@ package org.apache.hadoop.hive.ql.parse.sql.transformer.fb;
 
 import java.util.Stack;
 
+import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo;
 
 /**
@@ -30,6 +31,7 @@ public class FilterBlockContext {
   Stack<QueryBlock> queryStack = new Stack<QueryBlock>();
   Stack<SubQFilterBlock> subQStack = new Stack<SubQFilterBlock>();
   Stack<TypeFilterBlock> typeStack = new Stack<TypeFilterBlock>();
+  Stack<CommonTree> selectStack = new Stack<CommonTree>();
   QueryInfo qInfo;
 
   public FilterBlockContext(QueryInfo qInfo) {
@@ -46,6 +48,10 @@ public class FilterBlockContext {
 
   public Stack<TypeFilterBlock> getTypeStack() {
     return typeStack;
+  }
+
+  public Stack<CommonTree> getSelectStack() {
+    return selectStack;
   }
 
   public QueryInfo getqInfo() {

@@ -21,24 +21,25 @@ import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
+import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
-public class IdGenerator extends BaseHiveASTGenerator {
+/**
+ * Generator for "rows" keyword.
+ * e.g. select max(s_grade) over(partition by s_empname order by s_city rows unbounded preceding) from staff;
+ * RowsGenerator.
+ */
+public class RowsGenerator extends BaseHiveASTGenerator {
 
   @Override
   public boolean generate(ASTNode hiveRoot, CommonTree sqlRoot, ASTNode currentHiveNode,
       CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
-    ASTNode ret;
-    String text = currentSqlNode.getText();
-    if (currentSqlNode.getText().contains("\"") || currentSqlNode.getText().contains("'")) {
-      ret = super.newHiveASTNode(HiveParser.StringLiteral, currentSqlNode.getText());
-    } else if (currentSqlNode.getText().toLowerCase().equals("null")) {
-      ret = super.newHiveASTNode(HiveParser.TOK_NULL, "TOK_NULL");
-    } else {
-      ret = super.newHiveASTNode(HiveParser.Identifier, text);
+    ASTNode ret = SqlXlateUtil.newASTNode(HiveParser.TOK_WINDOWRANGE, "TOK_WINDOWRANGE");
+    ASTNode winSpec = (ASTNode) currentHiveNode.getParent();
+    if (winSpec.getType() != HiveParser.TOK_WINDOWSPEC) {
+      throw new SqlXlateException(currentSqlNode, "unsupported over clause for window function.");
     }
-    super.attachHiveNode(hiveRoot, currentHiveNode, ret);
-    // even if the node is leaf, still can call generateChildren.
+    super.attachHiveNode(hiveRoot, winSpec, ret);
     return super.generateChildren(hiveRoot, sqlRoot, ret, currentSqlNode, context);
   }
 

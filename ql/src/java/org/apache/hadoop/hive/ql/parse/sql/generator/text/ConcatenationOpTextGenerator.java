@@ -21,28 +21,39 @@ import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
+import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
+
 /**
- * generate like Function(...) .<br>
- * FuncTextGenerator.
+ * generate query for "string" || "string" where "||" represents concatenation operator
+ * ConcatenationOpTextGenerator.
  *
  */
-public class FuncTextGenerator extends BaseTextGenerator {
+public class ConcatenationOpTextGenerator extends BaseTextGenerator {
 
   @Override
   protected String textGenerate(CommonTree root, TranslateContext context) throws Exception {
-    if (root.getChildCount() < 2) {
-      return root.getText() + "(" + textGenerateChild(root, context) + ")";
-    } else if (root.getChildCount() == 2) {  // e.g. select max(col1) over() from ...
-      CommonTree op1 = (CommonTree) root.getChild(0);
-      QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
 
-      CommonTree op2 = (CommonTree) root.getChild(1);
-      QueryTextGenerator qr2 = TextGeneratorFactory.getTextGenerator(op2);
-      return root.getText() + "(" + qr1.textGenerateQuery(op1, context) + ") "
-          + qr2.textGenerateQuery(op2, context);
+    String ret = "concat(";
+    ret += textGenerateTreeInOrder(root, context);
+    ret += ")";
+    return ret;
+  }
+
+  private String textGenerateTreeInOrder(CommonTree root, TranslateContext context) throws Exception {
+    if (root.getType() == PantheraParser_PLSQLParser.CONCATENATION_OP) {
+      assert (root.getChildCount() == 2);
+      return textGenerateTreeInOrder((CommonTree) root.getChild(0), context) + ", " + textGenerateTreeInOrder((CommonTree) root.getChild(1), context);
     } else {
-      throw new SqlXlateException(root, "Unsupported function type!");
+      return textGenerateTreeLeaf(root, context);
     }
+  }
+
+  private String textGenerateTreeLeaf(CommonTree root, TranslateContext context) throws Exception {
+    QueryTextGenerator tg = TextGeneratorFactory.getTextGenerator(root);
+    if (tg == null) {
+      throw new SqlXlateException(root, "Untransformed SQL AST node:" + root.getText());
+    }
+    return tg.textGenerateQuery(root, context);
   }
 
 }

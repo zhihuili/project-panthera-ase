@@ -103,7 +103,9 @@ public class RedundantSelectGroupItemTransformer extends BaseSqlASTTransformer {
           if (type == PantheraParser_PLSQLParser.SELECT_LIST) {
             // in non-out-most query, a expression without alias not useful for outer select, can be
             // deleted
-            deleteList.add(item);
+            if (FilterBlockUtil.findOnlyNode(expr, PantheraParser_PLSQLParser.CASCATED_ELEMENT) != null) {
+              deleteList.add(item);
+            }
             continue;
           } else { // type == PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP
             boolean hasSameTreeFlag = false;

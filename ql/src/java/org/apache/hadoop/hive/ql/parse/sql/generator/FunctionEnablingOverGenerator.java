@@ -31,8 +31,8 @@ public class FunctionEnablingOverGenerator extends BaseHiveASTGenerator implemen
       CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
     ASTNode ret = SqlXlateUtil.newASTNode(HiveParser.Identifier, currentSqlNode.getText());
     super.attachHiveNode(hiveRoot, currentHiveNode, ret);
-    return super.generateChildren(hiveRoot, sqlRoot, currentHiveNode, (CommonTree) currentSqlNode
-        .getChild(0), context);
+    return super.generateChildren(hiveRoot, sqlRoot, currentHiveNode,
+        (CommonTree) currentSqlNode, context);
   }
 
 }

@@ -29,6 +29,8 @@ public class TransformerBuilder {
   private static SqlASTTransformer tf =
       new RedundantSelectGroupItemTransformer(
       new DistinctTransformer(
+      new GroupElementNormalizeTransformer(
+      new PrepareQueryInfoTransformer(
       new OrderByTransformer(
       new OrderByFunctionTransformer(
       new IntersectTransformer(
@@ -48,6 +50,7 @@ public class TransformerBuilder {
       new TopLevelUnionTransformer(
       new FilterBlockAdjustTransformer(
       new PrepareFilterBlockTransformer(
+      new ExpandAsteriskTransformer(
       new PrepareQueryInfoTransformer(
       new CrossJoinTransformer(
       new PrepareQueryInfoTransformer(
@@ -65,7 +68,8 @@ public class TransformerBuilder {
       new RowNumTransformer(
       new BetweenTransformer(
       new UsingTransformer(
-      new NothingTransformer()))))))))))))))))))))))))))))))))))));
+      new SchemaDotTableTransformer(
+      new NothingTransformer()))))))))))))))))))))))))))))))))))))))));
 
   private TransformerBuilder() {
   }
