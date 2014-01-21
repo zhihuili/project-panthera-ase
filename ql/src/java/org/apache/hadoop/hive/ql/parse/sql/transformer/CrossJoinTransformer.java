@@ -28,12 +28,10 @@ import java.util.Map;
 import java.util.Set;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.antlr.runtime.tree.Tree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
@@ -187,9 +185,9 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
         //
         // Check if this is a equality expression between two columns
         //
-        if (IsColumnRef(node.getChild(0)) && IsColumnRef(node.getChild(1))) {
-          String table1 = getTableName(qf, (CommonTree) node.getChild(0).getChild(0));
-          String table2 = getTableName(qf, (CommonTree) node.getChild(1).getChild(0));
+        if (FilterBlockUtil.IsColumnRef(node.getChild(0)) && FilterBlockUtil.IsColumnRef(node.getChild(1))) {
+          String table1 = FilterBlockUtil.getTableName(qf, (CommonTree) node.getChild(0).getChild(0));
+          String table2 = FilterBlockUtil.getTableName(qf, (CommonTree) node.getChild(1).getChild(0));
           //
           // Skip columns not in a src table.
           //
@@ -232,7 +230,7 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
       Set<String> referencedTables = new HashSet<String>();
       String srcTable;
       for (CommonTree anyElement : anyElementList) {
-        srcTable = getTableName(qf, (CommonTree) anyElement);
+        srcTable = FilterBlockUtil.getTableName(qf, (CommonTree) anyElement);
         if (srcTable != null) {
           referencedTables.add(srcTable);
         } else {
@@ -267,58 +265,6 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  private boolean IsColumnRef(Tree node) {
-    if (node.getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT
-        && node.getChild(0).getType() == PantheraParser_PLSQLParser.ANY_ELEMENT) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  private String getTableName(QueryInfo qf, CommonTree anyElement) throws SqlXlateException {
-    String table = null;
-
-    CommonTree currentSelect = (CommonTree) anyElement
-        .getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
-
-    if (anyElement.getChildCount() > 1) {
-      table = anyElement.getChild(0).getText();
-      if (anyElement.getChildCount() > 2) {
-        // schema.table
-        //table += ("." + anyElement.getChild(1).getText());
-        // merge schema and table as HIVE does not support schema.table.column in where clause.
-        //anyElement.deleteChild(1);
-        //((CommonTree) anyElement.getChild(0)).getToken().setText(table);
-        table = anyElement.getChild(1).getText();
-        anyElement.deleteChild(0);
-      }
-      //
-      // Return null table name if it is not a src table.
-      //
-      if (!qf.getSrcTblAliasForSelectKey(currentSelect).contains(table)) {
-        table = null;
-      }
-    } else {
-      String columnName = anyElement.getChild(0).getText();
-      List<Column> fromRowInfo = qf.getRowInfo((CommonTree) currentSelect
-          .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
-      for (Column col : fromRowInfo) {
-        if (col.getColAlias().equals(columnName)) {
-          table = col.getTblAlias();
-          // Add table leaf node because HIVE needs table name for join operation.
-          CommonTree tableNameNode = FilterBlockUtil.createSqlASTNode(anyElement, PantheraParser_PLSQLParser.ID,
-              table);
-          CommonTree columnNode = (CommonTree) anyElement.getChild(0);
-          anyElement.setChild(0, tableNameNode);
-          anyElement.addChild(columnNode);
-          break;
-        }
-      }
-    }
-    return table;
-  }
-
   private void transformFromClause(QueryInfo qf, CommonTree oldFrom, JoinInfo joinInfo)
       throws SqlXlateException {
     Set<String> alreadyJoinedTables = new HashSet<String>();
@@ -346,7 +292,7 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
         List<CommonTree> anyElementList = new ArrayList<CommonTree>();
         FilterBlockUtil.findNode(OnNode, PantheraParser_PLSQLParser.ANY_ELEMENT, anyElementList);
         for (CommonTree anyElement : anyElementList) {
-          getTableName(qf, anyElement);
+          FilterBlockUtil.getTableName(qf, anyElement);
         }
         if (joinNode.getChild(0).getType() == PantheraParser_PLSQLParser.LEFT_VK || joinNode
             .getChild(0).getType() == PantheraParser_PLSQLParser.RIGHT_VK
@@ -691,7 +637,7 @@ public class CrossJoinTransformer extends BaseSqlASTTransformer {
           // concat leftlist and rightlist into one to check whether there are columns from different tables;
           leftAnyElementList.addAll(rightAnyElementList);
           for (CommonTree anyElement : leftAnyElementList) {
-            String table1 = getTableName(qf, anyElement);
+            String table1 = FilterBlockUtil.getTableName(qf, anyElement);
             if (table1 == null) {
               errFlag = true;
               break;

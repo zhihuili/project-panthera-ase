@@ -43,8 +43,6 @@ public class AndFilterBlock extends LogicFilterBlock {
   @Override
   public void process(FilterBlockContext fbContext, TranslateContext context)
       throws SqlXlateException {
-    // super.processChildren(fbContext, context);
-    // FilterBlockProcessorFactory.getAndProcessor().process(fbContext, this, context);
     FilterBlock leftFB = this.getChildren().get(0);
     leftFB.process(fbContext, context);
     fbContext.getQueryStack().peek().setQueryForTransfer(leftFB.getTransformedNode());
@@ -53,7 +51,8 @@ public class AndFilterBlock extends LogicFilterBlock {
 
     CommonTree condition = rightFB.getASTNode();
     TypeFilterBlock type = fbContext.getTypeStack().peek();
-    if (rightFB instanceof UnCorrelatedFilterBlock) {// simple condition
+    if (rightFB instanceof UnCorrelatedFilterBlock) {
+      // simple condition
       if (type instanceof WhereFilterBlock) {
         rebuildWhereCondition(leftFB, condition);
       }
@@ -104,8 +103,7 @@ public class AndFilterBlock extends LogicFilterBlock {
       CommonTree sel = sels.get(0);
       for (int j = 0; j < sels.size(); j++) {
         sel = sels.get(j);
-        if(sel.getCharPositionInLine() == FilterBlockUtil.
-            firstAncestorOfType(condition, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT).getCharPositionInLine()) {
+        if(sel.getCharPositionInLine() == condition.getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT).getCharPositionInLine()) {
           break;
         }
       }
@@ -128,12 +126,7 @@ public class AndFilterBlock extends LogicFilterBlock {
         logicExpr.addChild(condition);
       } else {
         CommonTree logicExpr = (CommonTree) where.getChild(0);
-        CommonTree oldChild = (CommonTree) logicExpr.deleteChild(0);
-        CommonTree and = FilterBlockUtil.createSqlASTNode(condition,
-            PantheraExpParser.SQL92_RESERVED_AND, "and");
-        and.addChild(oldChild);
-        and.addChild(condition);
-        logicExpr.addChild(and);
+        FilterBlockUtil.addConditionToLogicExpr(logicExpr, condition);
       }
     }
   }
@@ -171,8 +164,7 @@ public class AndFilterBlock extends LogicFilterBlock {
       CommonTree group = grps.get(0);
       for (int j = 0; j < grps.size(); j++) {
         group = grps.get(j);
-        if(group.getCharPositionInLine() == FilterBlockUtil.
-            firstAncestorOfType(condition, PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP).getCharPositionInLine()) {
+        if(group.getCharPositionInLine() == condition.getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP).getCharPositionInLine()) {
           break;
         }
       }
@@ -188,12 +180,7 @@ public class AndFilterBlock extends LogicFilterBlock {
         logicExpr.addChild(condition);
       } else {
         CommonTree logicExpr = (CommonTree) having.getChild(0);
-        CommonTree oldChild = (CommonTree) logicExpr.deleteChild(0);
-        CommonTree and = FilterBlockUtil.createSqlASTNode(condition,
-            PantheraExpParser.SQL92_RESERVED_AND, "and");
-        and.addChild(oldChild);
-        and.addChild(condition);
-        logicExpr.addChild(and);
+        FilterBlockUtil.addConditionToLogicExpr(logicExpr, condition);
       }
     }
   }

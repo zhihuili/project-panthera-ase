@@ -34,16 +34,46 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  * SetOperatorTransformer.
  *
  */
-public abstract class SetOperatorTransformer extends BaseSqlASTTransformer {
+public abstract class SetOperatorTransformer {
 
   void processIntersect(CommonTree setOperator, TranslateContext context) throws SqlXlateException {
-    int intersectIndex = setOperator.getChildIndex();
-    if (intersectIndex != 1) {
-      throw new SqlXlateException(setOperator, "unsupported " + setOperator.getText() + " type!");
-    }
+
     CommonTree parent = (CommonTree) setOperator.getParent();
+    assert(parent.getType() == PantheraParser_PLSQLParser.SUBQUERY);
+    // there is union under SUBQUERY
+    /*
+     *                    SUBQUERY
+     *                  /    |     \
+     *           select    union   minus/intersect
+     */
+    if (parent.getChildCount() > 2) {
+      // add a level for Union, and make sure there is only SELECT under SUBQUERY
+      // before MINUS/INTERSECT
+      addLevelForUnion(parent, setOperator.getChildIndex(), context);
+    }
+    // the first must be SELECT node
     CommonTree leftSelect = (CommonTree) parent.getChild(0);
     CommonTree rightSelect = (CommonTree) setOperator.getChild(0);
+    //
+    if (rightSelect.getType() == PantheraParser_PLSQLParser.SUBQUERY) {
+      if (rightSelect.getChildCount() > 1) {
+        /*
+         *                 SUBQUERY
+         *                 /       \
+         *             select    minus/intersect
+         *                           |
+         *                        SUBQUERY
+         *                         /     \
+         *                      select   union
+         */
+        addLevelForUnion(rightSelect, rightSelect.getChildCount(), context);
+      }
+      rightSelect = (CommonTree) rightSelect.getChild(0);
+      if (rightSelect.getType() != PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
+        throw new SqlXlateException(setOperator, "unsupported sql format for " + setOperator.getText() + "!");
+      }
+    }
+    assert(rightSelect.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
     CommonTree leftSelectList = (CommonTree) leftSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST);
     CommonTree rightSelectList = (CommonTree) rightSelect
@@ -123,16 +153,7 @@ public abstract class SetOperatorTransformer extends BaseSqlASTTransformer {
     for (int i = 0; i < count; i++) {
       CommonTree condition = makeEqualCondition(on, leftAlias, rightAlias, leftColumnAliasList.get(i)
           .getChild(0).getText(), rightColumnAliasList.get(i).getChild(0).getText());
-      if (logicExpr.getChildCount() == 0) {
-        logicExpr.addChild(condition);
-      } else {
-        CommonTree and = FilterBlockUtil.createSqlASTNode(setOperator, PantheraExpParser.SQL92_RESERVED_AND,
-            "and");
-        CommonTree leftChild = (CommonTree) logicExpr.deleteChild(0);
-        and.addChild(leftChild);
-        and.addChild(condition);
-        logicExpr.addChild(and);
-      }
+      FilterBlockUtil.addConditionToLogicExpr(logicExpr, condition);
     }
 
     return on;
@@ -144,6 +165,34 @@ public abstract class SetOperatorTransformer extends BaseSqlASTTransformer {
     equal.addChild(FilterBlockUtil.createCascatedElementBranch(equal, leftAlias, leftColumn));
     equal.addChild(FilterBlockUtil.createCascatedElementBranch(equal, rightAlias, rightColumn));
     return equal;
+  }
 
+  /**
+   * add a level for union, just copy the select list from the most left SELECT.
+   * @param subQuery
+   * @param lastIndex
+   * @param context
+   * @throws SqlXlateException
+   */
+  private void addLevelForUnion(CommonTree subQuery, int lastIndex, TranslateContext context) throws SqlXlateException {
+    CommonTree leftSelect = (CommonTree) subQuery.getChild(0);
+
+    // make sure all column in leftSelect has alias.
+    FilterBlockUtil.addColumnAliasOrigin(leftSelect, context);
+
+    // top level select for union.
+    CommonTree select = FilterBlockUtil.createSqlASTNode(leftSelect, PantheraExpParser.SQL92_RESERVED_SELECT,
+        "select");
+    CommonTree subSubQuery = FilterBlockUtil.makeSelectBranch(select, context,
+        (CommonTree) leftSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
+
+    // there might be more than one union node.
+    for (int i = 0; i < lastIndex; i++) {
+      subSubQuery.addChild(subQuery.getChild(i));
+    }
+    // copy the select list from the leftSelect
+    CommonTree selectList = FilterBlockUtil.cloneSelectListByAliasFromSelect(leftSelect);
+    select.addChild(selectList);
+    subQuery.replaceChildren(0, lastIndex - 1, select);
   }
 }

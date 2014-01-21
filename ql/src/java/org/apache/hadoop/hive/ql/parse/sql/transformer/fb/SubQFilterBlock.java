@@ -48,6 +48,11 @@ public class SubQFilterBlock extends BaseFilterBlock {
           tempQS.push(fbContext.getQueryStack().pop());
           tempTS.push(fbContext.getTypeStack().pop());
         }
+        // both correlated and uncorrelated columns will be stored in QueryBlock.
+        /*
+         * here use add(FilterBlockUtil.cloneTree(node)) will detach the relation of "node" with WhereFilterColumns
+         * because the column in WHERE will not be refreshed.
+         */
         fbContext.getQueryStack().peek().getWhereFilterColumns().add(FilterBlockUtil.cloneTree(node));
         for (int i = 0; i < level; i++) {
           fbContext.getTypeStack().push(tempTS.pop());
@@ -56,8 +61,10 @@ public class SubQFilterBlock extends BaseFilterBlock {
       }
 
       nodeList = new ArrayList<CommonTree>();
+      // for aggregation funcs, if it has correlated columns, need to store this function into QueryBlcok.
       FilterBlockUtil.findNode((CommonTree) subQ.getChild(element), PantheraParser_PLSQLParser.STANDARD_FUNCTION, nodeList);
       for (CommonTree node : nodeList) {
+        // TODO: there might be other non aggregation functions have STANDARD_FUNCTION node.
         if (node.getChild(0).getText().equals("substring") || node.getChild(0).getText().equals("substr")) {
           continue;
         }
@@ -74,6 +81,12 @@ public class SubQFilterBlock extends BaseFilterBlock {
           tempQS.push(fbContext.getQueryStack().pop());
           tempTS.push(fbContext.getTypeStack().pop());
         }
+        // store aggregation into HavingFilterColumns. Aggregation function can not exists in WHERE clause.
+        // so the aggregation founded must be from HAVING clause.
+        /*
+         * here use "add(node)" instead of "add(FilterBlockUtil.cloneTree(node))", because the column name will be
+         * refreshed in HAVING clause
+         */
         fbContext.getQueryStack().peek().getHavingFilterColumns().add(node);
         for (int i = 0; i < level; i++) {
           fbContext.getTypeStack().push(tempTS.pop());
@@ -114,6 +127,12 @@ public class SubQFilterBlock extends BaseFilterBlock {
   void postExecute(FilterBlockContext fbContext, TranslateContext context) {
     fbContext.getTypeStack().peek().setTransformedNode(this.getTransformedNode());
     fbContext.getQueryStack().peek().setQueryForTransfer(this.getTransformedNode());
+    if (this.getTransformedNode().getType() == PantheraParser_PLSQLParser.SUBQUERY) {
+      // TODO transformed node children more than one is not good
+      fbContext.getSelectStackForTransfer().pop();
+      CommonTree select = FilterBlockUtil.findOnlyNode(this.getTransformedNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
+      fbContext.getSelectStackForTransfer().push(select);
+    }
   }
 
 }

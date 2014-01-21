@@ -125,7 +125,7 @@ public class UnCorrelatedFilterBlock extends NormalFilterBlock {
   }
 
   private void handleUncorrelatedInHaving(CommonTree tree, CommonTree condition) {
-    CommonTree thisSelect = FilterBlockUtil.firstAncestorOfType(condition, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
+    CommonTree thisSelect = (CommonTree) condition.getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
     List<CommonTree> selects = new ArrayList<CommonTree>();
     FilterBlockUtil.findNode(tree, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, selects);
     int i = 0;
@@ -156,15 +156,7 @@ public class UnCorrelatedFilterBlock extends NormalFilterBlock {
         logicExpr = FilterBlockUtil.createSqlASTNode(group, PantheraParser_PLSQLParser.LOGIC_EXPR, "LOGIC_EXPR");
         having.addChild(logicExpr);
       }
-      if (logicExpr.getChildCount() > 0) {
-        CommonTree oldCond = (CommonTree) logicExpr.deleteChild(0);
-        CommonTree and = FilterBlockUtil.createSqlASTNode(group, PantheraParser_PLSQLParser.SQL92_RESERVED_AND, "and");
-        logicExpr.addChild(and);
-        and.addChild(oldCond);
-        and.addChild(condition);
-      } else {
-        logicExpr.addChild(condition);
-      }
+      FilterBlockUtil.addConditionToLogicExpr(logicExpr, condition);
     } else {
       // no group, means it has underwent transformation.
       // put in where
@@ -185,16 +177,7 @@ public class UnCorrelatedFilterBlock extends NormalFilterBlock {
           PantheraExpParser.LOGIC_EXPR, "LOGIC_EXPR");
       where.addChild(logicExpr);
     }
-    if (logicExpr.getChildCount() == 0) {
-      logicExpr.addChild(condition);
-    } else {
-      CommonTree and = FilterBlockUtil.createSqlASTNode(condition,
-          PantheraExpParser.SQL92_RESERVED_AND, "and");
-      CommonTree oldCond = (CommonTree) logicExpr.deleteChild(0);
-      logicExpr.addChild(and);
-      and.addChild(oldCond);
-      and.addChild(condition);
-    }
+    FilterBlockUtil.addConditionToLogicExpr(logicExpr, condition);
   }
 
 }

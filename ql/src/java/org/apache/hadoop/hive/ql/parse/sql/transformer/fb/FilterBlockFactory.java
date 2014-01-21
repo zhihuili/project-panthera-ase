@@ -114,11 +114,15 @@ public abstract class FilterBlockFactory {
   }
 
   /**
+   * return correlated level of CASCATED_ELEMENT <br>
    *
    * @param qFNode
    * @param selectStack
    * @param branch
-   * @return true: correlated, false: uncorrelated
+   *        supposed to be CASCATED_ELEMENT
+   * @return
+   *       return 0 if uncorrelated,<br>
+   *       return a positive number if correlated, indicating correlating level<br>
    * @throws SqlXlateException
    */
   abstract int isCorrelated(QueryInfo qFNode, Stack<CommonTree> selectStack, CommonTree branch)
@@ -445,8 +449,12 @@ public abstract class FilterBlockFactory {
    * @param qInfo
    * @param selectStack
    * @param branch
+   *        supposed to be ANY_ELEMENT
    * @return
+   *       return 0 if uncorrelated,<br>
+   *       return a positive number if correlated, indicating correlating level<br>
    * @throws SqlXlateException
+   *       throw exception if element is not found via QueryInfo.
    */
   public abstract int isAnyElementCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack,
       CommonTree branch) throws SqlXlateException;

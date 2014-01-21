@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.hive.ql.parse.sql.PantheraConstants;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
@@ -119,19 +120,15 @@ public class OrFilterBlock extends LogicFilterBlock {
     int topNumber = topList.getChildCount();
     assert(topNumber == goldenList.getChildCount());
     CommonTree closingSelect = FilterBlockUtil.createSqlASTNode(topSelect, PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT, "select");
-    CommonTree topTableRef = FilterBlockUtil.createTableRefElement(topSelect, context);
-    CommonTree topTableAliasId = (CommonTree) topTableRef.getChild(0).getChild(0);
-    CommonTree goldenTableRef = FilterBlockUtil.createTableRefElement(goldenSelect, context);
-    CommonTree goldenTableAliasId = (CommonTree) goldenTableRef.getChild(0).getChild(0);
+    CommonTree tableRef = FilterBlockUtil.createSqlASTNode(topSelect, PantheraParser_PLSQLParser.TABLE_REF, "TABLE_REF");
+    CommonTree topTableAliasId = FilterBlockUtil.addTableRefElement(tableRef, topSelect, context);
+    CommonTree join = FilterBlockUtil.createSqlASTNode(goldenSelect, PantheraParser_PLSQLParser.JOIN_DEF, "join");
+    tableRef.addChild(join);
+    CommonTree goldenTableAliasId = FilterBlockUtil.addTableRefElement(join, goldenSelect, context);
     CommonTree topFrom = (CommonTree) topSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
     CommonTree from = FilterBlockUtil.createSqlASTNode(topFrom, PantheraParser_PLSQLParser.SQL92_RESERVED_FROM, "from");
     closingSelect.addChild(from);
-    CommonTree tableRef = FilterBlockUtil.createSqlASTNode(topSelect, PantheraParser_PLSQLParser.TABLE_REF, "TABLE_REF");
     from.addChild(tableRef);
-    CommonTree join = FilterBlockUtil.createSqlASTNode(goldenSelect, PantheraParser_PLSQLParser.JOIN_DEF, "join");
-    tableRef.addChild(topTableRef);
-    tableRef.addChild(join);
-    join.addChild(goldenTableRef);
     CommonTree on = FilterBlockUtil.createSqlASTNode(closingSelect, PantheraParser_PLSQLParser.SQL92_RESERVED_ON, "on");
     join.addChild(on);
     CommonTree logicExpr = FilterBlockUtil.createSqlASTNode(closingSelect, PantheraParser_PLSQLParser.LOGIC_EXPR, "LOGIC_EXPR");
@@ -145,15 +142,7 @@ public class OrFilterBlock extends LogicFilterBlock {
       CommonTree equalns = FilterBlockUtil.createSqlASTNode(closingSelect, PantheraExpParser.EQUALS_NS, "<=>");
       equalns.addChild(leftOp);
       equalns.addChild(rightOp);
-      if (logicExpr.getChildCount() == 0) {
-        logicExpr.addChild(equalns);
-      } else {
-        CommonTree oldCond = (CommonTree) logicExpr.deleteChild(0);
-        CommonTree and = FilterBlockUtil.createSqlASTNode(logicExpr, PantheraParser_PLSQLParser.SQL92_RESERVED_AND, "and");
-        and.addChild(oldCond);
-        and.addChild(equalns);
-        logicExpr.addChild(and);
-      }
+      FilterBlockUtil.addConditionToLogicExpr(logicExpr, equalns);
     }
     closingSelect.addChild(makeClosingSelectList(topTableAliasId, topList, topNumber - size));
     return closingSelect;
@@ -183,12 +172,12 @@ public class OrFilterBlock extends LogicFilterBlock {
             CommonTree cNameNode;
             if (cascated.getChild(0).getChildCount() > 1) {
               cNameNode = (CommonTree) column.getChild(0).getChild(1);
-              if (!tableName.startsWith("panthera_")) {
+              if (!tableName.startsWith(PantheraConstants.PANTHERA_PREFIX)) {
                 tableName = column.getChild(0).getChild(0).getText();
               }
             } else {
               cNameNode = (CommonTree) column.getChild(0).getChild(0);
-              if (!tableName.startsWith("panthera_")) {
+              if (!tableName.startsWith(PantheraConstants.PANTHERA_PREFIX)) {
                 tableName = "";
               }
             }
@@ -213,12 +202,12 @@ public class OrFilterBlock extends LogicFilterBlock {
           CommonTree cNameNode;
           if (cascated.getChild(0).getChildCount() > 1) {
             cNameNode = (CommonTree) column.getChild(0).getChild(1);
-            if (!tableName.startsWith("panthera_")) {
+            if (!tableName.startsWith(PantheraConstants.PANTHERA_PREFIX)) {
               tableName = column.getChild(0).getChild(0).getText();
             }
           } else {
             cNameNode = (CommonTree) column.getChild(0).getChild(0);
-            if (!tableName.startsWith("panthera_")) {
+            if (!tableName.startsWith(PantheraConstants.PANTHERA_PREFIX)) {
               tableName = "";
             }
           }

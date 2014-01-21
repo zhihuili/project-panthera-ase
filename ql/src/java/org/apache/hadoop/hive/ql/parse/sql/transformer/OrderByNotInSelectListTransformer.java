@@ -139,7 +139,7 @@ public class OrderByNotInSelectListTransformer extends BaseSqlASTTransformer {
                 .equals(expr.getChild(0).getChild(0).getChild(0).getText())) {
           hasSameItem = true;
           break;
-        } else if (isEqualByText((CommonTree) selectList.getChild(j).getChild(0), expr)) {
+        } else if (FilterBlockUtil.equalsTree((CommonTree) selectList.getChild(j).getChild(0), expr)) {
           expr.deleteChild(0);
           CommonTree columnNode = FilterBlockUtil.createSqlASTNode(expr, PantheraExpParser.ID,
               selectList.getChild(j).getChild(1).getChild(0).getText());
@@ -220,26 +220,6 @@ public class OrderByNotInSelectListTransformer extends BaseSqlASTTransformer {
 
   }
 
-  private boolean isEqualByText(CommonTree tree1, CommonTree tree2) {
-    if (!tree1.getText().equals(tree2.getText())) {
-      return false;
-    } else {
-      if (tree1.getChildCount() == 0 && tree2.getChildCount() == 0) {
-        return true;
-      }
-      if (tree1.getChildCount() != tree2.getChildCount()) {
-        return false;
-      }
-      for (int i = 0; i < tree1.getChildCount(); i++) {
-        if (!isEqualByText((CommonTree) tree1.getChild(i), (CommonTree) tree2.getChild(i))) {
-          return false;
-        }
-      }
-      return true;
-    }
-  }
-
-
   private boolean needInsertSelectList(CommonTree orderByElements, CommonTree selectList,
       TranslateContext context) {
     for (int i = 0; i < orderByElements.getChildCount(); i++) {
@@ -254,7 +234,7 @@ public class OrderByNotInSelectListTransformer extends BaseSqlASTTransformer {
                 .equals(expr.getChild(0).getChild(0).getChild(0).getText())) {
           hasSameItem = true;
           break;
-        } else if (isEqualByText((CommonTree) selectList.getChild(j).getChild(0), expr)) {
+        } else if (FilterBlockUtil.equalsTree((CommonTree) selectList.getChild(j).getChild(0), expr)) {
           hasSameItem = true;
           break;
         }

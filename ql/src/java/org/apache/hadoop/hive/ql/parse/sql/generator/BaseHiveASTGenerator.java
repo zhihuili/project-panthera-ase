@@ -19,8 +19,8 @@ package org.apache.hadoop.hive.ql.parse.sql.generator;
 
 import java.util.Iterator;
 
-import org.antlr.runtime.tree.Tree;
 import org.antlr.runtime.tree.CommonTree;
+import org.antlr.runtime.tree.Tree;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;

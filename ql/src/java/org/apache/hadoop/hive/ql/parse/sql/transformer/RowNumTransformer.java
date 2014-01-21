@@ -17,8 +17,6 @@
  */
 package org.apache.hadoop.hive.ql.parse.sql.transformer;
 
-import java.util.Stack;
-
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
@@ -33,7 +31,7 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  * Tranform the form "select ... from ... where rownum (< | <=) <int>" to "select ... from ... limit <int>".
  * note that there is only one condition in the where clause, that is, rownum (< | <=) <int>.
  *
- * Optimization: in the case where "select * from (subquery) limit <int>" then drop the outer query,
+ * Optimization: in the case where "select * from (subquery) [limit <int>]" then drop the outer query,
  *                     and promote the subquery after attaching the parent's limit token to it.
  *
  */
@@ -49,14 +47,16 @@ public class RowNumTransformer  extends BaseSqlASTTransformer  {
   public void transform(CommonTree tree, TranslateContext context) throws SqlXlateException {
     tf.transformAST(tree, context);
 
-    Stack<CommonTree> stack = new Stack<CommonTree>();
-    stack.push (null);
-    transformRownum (tree, stack);
+    transformRownum (tree);
+    optimizeSelectAsterisk (tree);
   }
 
-  private void transformRownum(CommonTree node, Stack<CommonTree> stack) {
+  /**
+   * change rownum into limit
+   * @param node
+   */
+  private void transformRownum(CommonTree node) {
     if (node.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
-      stack.push (node);
       //
       // If this select has where clause, and the where clause has only one condition: rownum (< | <=) <int>,
       // then transform it to limit.
@@ -98,71 +98,129 @@ public class RowNumTransformer  extends BaseSqlASTTransformer  {
     }
 
     for (int i = 0; i < node.getChildCount(); i++) {
-      transformRownum((CommonTree) node.getChild(i), stack);
-    }
-
-    if (node.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
-      //
-      // Node may be changed by the subquery. Restore it from the stack.
-      //
-      node = stack.pop();
-      //
-      // Optimization: in the case where "select * from (subquery) limit <int>" then drop the outer query,
-      //                     and promote the subquery after attaching the parent's limit token to it.
-      //
-
-      //
-      // Make sure this query is the only child of the parent query.
-      //
-      CommonTree parentSelect = stack.peek();
-      if (parentSelect == null || parentSelect.getChildCount() > 3) {
-        return;
-      }
-      CommonTree parentFrom = (CommonTree) parentSelect.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
-      if (parentFrom.getChildCount() != 1 || parentFrom.getChild(0).getChildCount() != 1) {
-        return;
-      }
-
-      //
-      // If not select *, return
-      //
-      if (parentSelect.getFirstChildWithType(PantheraParser_PLSQLParser.ASTERISK) == null) {
-        return;
-      }
-
-      //
-      // Make sure parent select has no group by,order by,having.
-      // Note that "order by" is a child of select statement node.
-      //
-
-      if (parentSelect.getParent().getParent().getChildCount() > 1) {
-        return;
-      }
-      if (parentSelect.getChildCount() == 3) {
-        CommonTree limitParent = (CommonTree) parentSelect.getFirstChildWithType(PantheraExpParser.LIMIT_VK);
-        if (limitParent == null) {
-          return;
-        }
-        //
-        // Move down the limit token of the parent query to this query. If this query also has a limit,
-        // then choose the min limit.
-        //
-        CommonTree limitThis = (CommonTree) node.getFirstChildWithType(PantheraExpParser.LIMIT_VK);
-        if (limitThis == null) {
-          node.addChild(limitParent);
-        } else {
-          int limit1 = Integer.parseInt(limitParent.getChild(0).getText());
-          int limit2 = Integer.parseInt(limitThis.getChild(0).getText());
-          ((CommonTree) limitThis.getChild(0)).getToken().setText(Integer.toString(limit1 < limit2 ? limit1 : limit2));
-        }
-      }
-      //
-      // Replace the parent select statement node with the current select statement node (in case missing order by).
-      //
-      CommonTree parentSelectStatement = (CommonTree) parentSelect.getParent().getParent();
-      parentSelectStatement.getParent().setChild(parentSelectStatement.getChildIndex(), node.getParent().getParent());
-      stack.pop();
-      stack.push(node);
+      transformRownum((CommonTree) node.getChild(i));
     }
   }
+
+  /**
+   * optimize select * from (subQ)
+   * @param node
+   */
+  private void optimizeSelectAsterisk(CommonTree node) {
+    //
+    // Optimization: in the case where "select * from (subquery) [limit <int>]" then drop the outer
+    // query,
+    // and promote the subquery after attaching the parent's limit token to it.
+    //
+    while (true) {
+      boolean replacedFlag = false;
+      if (node.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
+        //
+        // if select is not in format "SELECT * FROM ... LIMIT", break.
+        //
+        if (node.getChildCount() > 3) {
+          break;
+        }
+        //
+        // If not select *, break.
+        //
+        if (node.getFirstChildWithType(PantheraParser_PLSQLParser.ASTERISK) == null) {
+          break;
+        }
+        CommonTree from = (CommonTree) node
+            .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
+        if (from.getChildCount() != 1 || from.getChild(0).getChildCount() != 1) {
+          return;
+        }
+        CommonTree tableRefElement = (CommonTree) from.getChild(0).getChild(0);
+        CommonTree mode = (CommonTree) tableRefElement
+            .getChild(tableRefElement.getChildCount() - 1).getChild(0);
+        //
+        // if not select mode in from, break.
+        //
+        if (mode.getType() != PantheraParser_PLSQLParser.SELECT_MODE) {
+          break;
+        }
+        CommonTree subSubQuery = (CommonTree) mode.getChild(0).getChild(0);
+        //
+        // if subquery has union/intersect/minus, break.
+        //
+        if (subSubQuery.getType() != PantheraParser_PLSQLParser.SUBQUERY
+            || subSubQuery.getChildCount() != 1) {
+          break;
+        }
+        //
+        // Make sure select has no group by,order by,having.
+        // Note that "order by" is a child of select statement node.
+        //
+        if (node.getParent().getParent().getChildCount() > 1) {
+          break;
+        }
+        CommonTree subSelect = (CommonTree) subSubQuery.getChild(0);
+        if (node.getChildCount() == 3) {
+          CommonTree limit = (CommonTree) node.getFirstChildWithType(PantheraExpParser.LIMIT_VK);
+          if (limit == null) {
+            break;
+          }
+          //
+          // Move down the limit token of the parent query to this query. If this query also has a
+          // limit,
+          // then choose the min limit.
+          //
+          CommonTree subLimit = (CommonTree) subSelect
+              .getFirstChildWithType(PantheraExpParser.LIMIT_VK);
+          if (subLimit == null) {
+            subSelect.addChild(limit);
+          } else {
+            int limit1 = Integer.parseInt(limit.getChild(0).getText());
+            int limit2 = Integer.parseInt(subLimit.getChild(0).getText());
+            ((CommonTree) subLimit.getChild(0)).getToken().setText(
+                Integer.toString(limit1 < limit2 ? limit1 : limit2));
+          }
+        }
+        // if only select * from (subquery), without limit node, just replace the SELECT.
+        //
+        // Replace the parent select statement node with the current select statement node (in case
+        // missing order by).
+        //
+        CommonTree subSelectStatement = (CommonTree) mode.getChild(0);
+        // subQuery doesn't have order by clause, just replace select tree.
+        if (subSelectStatement.getChildCount() == 1) {
+          node.getParent().setChild(node.getChildIndex(), subSelect);
+          // refresh node to new select.
+          node = subSelect;
+          replacedFlag = true;
+        } else { // subQuery has order by clause, need to replace selectStatement tree.
+          if (node.getParent().getType() != PantheraParser_PLSQLParser.SUBQUERY
+              || node.getParent().getChildCount() != 1) {
+            break;
+          }
+          // if current select has order by, replace select tree, use current select order by.
+          if (node.getParent().getParent().getChildCount() > 1) {
+            node.getParent().setChild(node.getChildIndex(), subSelect);
+            // refresh node to new select.
+            node = subSelect;
+            replacedFlag = true;
+          } else { // no order by, replace selectStatement tree.
+            CommonTree SelectStatement = (CommonTree) node.getParent().getParent();
+            SelectStatement.getParent().setChild(SelectStatement.getChildIndex(),
+                subSelectStatement);
+            // refresh node to new select.
+            node = subSelect;
+            replacedFlag = true;
+          }
+        }
+      }
+      if (replacedFlag) {
+        // traverse the replaced node.
+        optimizeSelectAsterisk(node);
+      }
+      break;
+    }
+
+    for (int i = 0; i < node.getChildCount(); i++) {
+      optimizeSelectAsterisk((CommonTree) node.getChild(i));
+    }
+  }
+
 }

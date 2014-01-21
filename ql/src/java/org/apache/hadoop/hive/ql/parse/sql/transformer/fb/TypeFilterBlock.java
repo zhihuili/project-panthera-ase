@@ -66,7 +66,7 @@ public abstract class TypeFilterBlock extends BaseFilterBlock {
    * @param context
    */
   protected void removeGroupElementFromSelectList(FilterBlockContext fbContext, TranslateContext context) {
-    CommonTree select = FilterBlockUtil.firstAncestorOfType((CommonTree) this.getASTNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
+    CommonTree select = (CommonTree) this.getASTNode().getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
     CommonTree group = (CommonTree) select.getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_GROUP);
     CommonTree transformedNode = this.getTransformedNode();
     if (transformedNode == null || group == null) {

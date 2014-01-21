@@ -32,6 +32,7 @@ public class FilterBlockContext {
   Stack<SubQFilterBlock> subQStack = new Stack<SubQFilterBlock>();
   Stack<TypeFilterBlock> typeStack = new Stack<TypeFilterBlock>();
   Stack<CommonTree> selectStack = new Stack<CommonTree>();
+  Stack<CommonTree> selectStackForTransfer = new Stack<CommonTree>();
   QueryInfo qInfo;
 
   public FilterBlockContext(QueryInfo qInfo) {
@@ -52,6 +53,10 @@ public class FilterBlockContext {
 
   public Stack<CommonTree> getSelectStack() {
     return selectStack;
+  }
+
+  public Stack<CommonTree> getSelectStackForTransfer() {
+    return selectStackForTransfer;
   }
 
   public QueryInfo getqInfo() {

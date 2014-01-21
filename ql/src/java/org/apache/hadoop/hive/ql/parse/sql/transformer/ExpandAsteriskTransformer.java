@@ -67,55 +67,76 @@ public class ExpandAsteriskTransformer extends BaseSqlASTTransformer {
     CommonTree select = qi.getSelectKeyForThisQ();
     CommonTree selectList = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
     CommonTree asterisk = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.ASTERISK);
-    if (asterisk != null) {
-      int index = 0;
-      if (selectList == null) {
-        selectList = FilterBlockUtil.createSqlASTNode(asterisk, PantheraParser_PLSQLParser.SELECT_LIST, "SELECT_LIST");
-        select.replaceChildren(asterisk.childIndex, asterisk.childIndex, selectList);
-      } else {
-        select.deleteChild(asterisk.childIndex);
-        if (selectList.childIndex < asterisk.childIndex) {
-          index = selectList.getChildCount();
-        }
-      }
-      List<Column> columnList = qi.getRowInfo((CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
-      for (Column column : columnList) {
-        String col = column.getColAlias();
-        String tab = column.getTblAlias();
-        CommonTree alias = FilterBlockUtil.createAlias(asterisk, col);
-        CommonTree cas = FilterBlockUtil.createCascatedElementBranch(asterisk, tab, col);
-        CommonTree expr = FilterBlockUtil.createSqlASTNode(asterisk, PantheraParser_PLSQLParser.EXPR, "EXPR");
-        expr.addChild(cas);
-        CommonTree nsi = FilterBlockUtil.createSqlASTNode(asterisk, PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
-        nsi.addChild(expr);
-        nsi.addChild(alias);
-        SqlXlateUtil.addCommonTreeChild(selectList, index++, nsi);
-      }
+    CommonTree group = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
+    CommonTree where = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_WHERE);
+    CommonTree order = null;
+    CommonTree selectStatement = (CommonTree) select.getParent().getParent();
+    if (selectStatement.getType() == PantheraParser_PLSQLParser.SELECT_STATEMENT) {
+      order = (CommonTree) selectStatement.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_ORDER);
     }
-    for (int i = 0; i < selectList.getChildCount(); i++) {
-      CommonTree selectItem = (CommonTree) selectList.getChild(i);
-      CommonTree sexpr = (CommonTree) selectItem.getChild(0);
-      if (sexpr.getType() == PantheraParser_PLSQLParser.EXPR && sexpr.getChild(0).getType() == PantheraParser_PLSQLParser.DOT_ASTERISK) {
-        CommonTree tableView = (CommonTree) sexpr.getChild(0).getChild(0);
-        assert(tableView != null && tableView.getType() == PantheraParser_PLSQLParser.TABLEVIEW_NAME);
-        String tabname = tableView.getChild(0).getText();
-        CommonTree t = new CommonTree();
-        List<Column> columnList = qi.getFromRowInfo();
+    CommonTree subQuery = (CommonTree) select.getAncestor(PantheraParser_PLSQLParser.SUBQUERY);
+    if (group != null || where != null || order != null || subQuery.getChildCount() > 1) {
+      // only SELECT * which has GROUP node or WHERE node or has orderby branch or coexists with union will be expanded.
+      // "select * from table" will not be expanded. (expanded it will introduce one more MAPRED jobs)
+
+      if (asterisk != null) {
+        // intend to expand * at beginning of selectList
+        int index = 0;
+        if (selectList == null) {
+          selectList = FilterBlockUtil.createSqlASTNode(asterisk,
+              PantheraParser_PLSQLParser.SELECT_LIST, "SELECT_LIST");
+          select.replaceChildren(asterisk.childIndex, asterisk.childIndex, selectList);
+        } else {
+          if (selectList.childIndex < asterisk.childIndex) {
+            // selectList first and then asterisk, expand * at end of asterisk
+            index = selectList.getChildCount();
+          }
+          select.deleteChild(asterisk.childIndex);
+        }
+        List<Column> columnList = qi.getRowInfo((CommonTree) select
+            .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
         for (Column column : columnList) {
           String col = column.getColAlias();
           String tab = column.getTblAlias();
-          if (tab.equals(tabname)) {
-            CommonTree alias = FilterBlockUtil.createAlias(sexpr, col);
-            CommonTree cas = FilterBlockUtil.createCascatedElementBranch(sexpr, tab, col);
-            CommonTree expr = FilterBlockUtil.createSqlASTNode(sexpr, PantheraParser_PLSQLParser.EXPR, "EXPR");
-            expr.addChild(cas);
-            CommonTree nsi = FilterBlockUtil.createSqlASTNode(sexpr, PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
-            nsi.addChild(expr);
-            nsi.addChild(alias);
-            t.addChild(nsi);
-          }
+          CommonTree cas = FilterBlockUtil.createCascatedElementBranch(asterisk, tab, col);
+          CommonTree expr = FilterBlockUtil.createSqlASTNode(asterisk,
+              PantheraParser_PLSQLParser.EXPR, "EXPR");
+          expr.addChild(cas);
+          CommonTree nsi = FilterBlockUtil.createSqlASTNode(asterisk,
+              PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
+          nsi.addChild(expr);
+          // no alias in nsi for 'select xx.* for xx join yy order by xx.xx1'
+          SqlXlateUtil.addCommonTreeChild(selectList, index++, nsi);
         }
-        selectList.replaceChildren(i, i, t);
+      }
+      // expand * for table.*
+      for (int i = 0; i < selectList.getChildCount(); i++) {
+        CommonTree selectItem = (CommonTree) selectList.getChild(i);
+        CommonTree sexpr = (CommonTree) selectItem.getChild(0);
+        if (sexpr.getType() == PantheraParser_PLSQLParser.EXPR
+            && sexpr.getChild(0).getType() == PantheraParser_PLSQLParser.DOT_ASTERISK) {
+          CommonTree tableView = (CommonTree) sexpr.getChild(0).getChild(0);
+          assert (tableView != null && tableView.getType() == PantheraParser_PLSQLParser.TABLEVIEW_NAME);
+          String tabname = tableView.getChild(0).getText();
+          CommonTree t = new CommonTree();
+          List<Column> columnList = qi.getFromRowInfo();
+          for (Column column : columnList) {
+            String col = column.getColAlias();
+            String tab = column.getTblAlias();
+            if (tab.equals(tabname)) {
+              CommonTree cas = FilterBlockUtil.createCascatedElementBranch(sexpr, tab, col);
+              CommonTree expr = FilterBlockUtil.createSqlASTNode(sexpr,
+                  PantheraParser_PLSQLParser.EXPR, "EXPR");
+              expr.addChild(cas);
+              CommonTree nsi = FilterBlockUtil.createSqlASTNode(sexpr,
+                  PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
+              nsi.addChild(expr);
+              // no alias in nsi for 'select xx.* for xx join yy order by xx.xx1'
+              t.addChild(nsi);
+            }
+          }
+          selectList.replaceChildren(i, i, t);
+        }
       }
     }
   }

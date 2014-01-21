@@ -35,12 +35,22 @@ public class RoutineCallTextGenerator extends BaseTextGenerator {
     }
     CommonTree op0 = (CommonTree) root.getChild(0);
     QueryTextGenerator qr0 = TextGeneratorFactory.getTextGenerator(op0);
+    String routineName = qr0.textGenerateQuery(op0, context);
     if (!(root.getChild(1) instanceof org.antlr.runtime.tree.CommonTree)) {
       throw new SqlParseException("illegal sql AST node:" + root.getChild(1));
     }
     CommonTree op1 = (CommonTree) root.getChild(1);
+    if (routineName.equalsIgnoreCase("nullif")) {
+      // nullif(a,b) should be generated as (case when a=b then null else a end)
+      assert (op1.getChildCount() == 2);
+      QueryTextGenerator qra = TextGeneratorFactory.getTextGenerator((CommonTree) op1.getChild(0));
+      QueryTextGenerator qrb = TextGeneratorFactory.getTextGenerator((CommonTree) op1.getChild(1));
+      String expa = qra.textGenerateQuery((CommonTree) op1.getChild(0), context);
+      String expb = qrb.textGenerateQuery((CommonTree) op1.getChild(1), context);
+      return "(case when " + expa + " = " + expb + " then null else " + expa + " end)";
+    }
     QueryTextGenerator qr1 = TextGeneratorFactory.getTextGenerator(op1);
-    return qr0.textGenerateQuery(op0, context) + "(" + qr1.textGenerateQuery(op1, context) + ")";
+    return routineName + "(" + qr1.textGenerateQuery(op1, context) + ")";
   }
 
 }

@@ -33,18 +33,17 @@ public class TransformerBuilder {
       new PrepareQueryInfoTransformer(
       new OrderByTransformer(
       new OrderByFunctionTransformer(
-      new IntersectTransformer(
-      new MinusTransformer(
+      new MinusIntersectTransformer(
       new PrepareQueryInfoTransformer(
       new UnionTransformer(
       new Leftsemi2LeftJoinTransformer(
+      new CountAsteriskPositionTransformer(
       new FilterInwardTransformer(
       // unComment the following line to use leftJoin method to handle not exists for correlated
       //new NotEqualJoinTransformer(
       new CrossJoinTransformer(
       new PrepareQueryInfoTransformer(
       new SubQUnnestTransformer(
-      new ColumnPreFetchTransformer(
       new PrepareFilterBlockTransformer(
       new PrepareQueryInfoTransformer(
       new TopLevelUnionTransformer(
@@ -60,16 +59,14 @@ public class TransformerBuilder {
       new PrepareQueryInfoTransformer(
       new InTransformer(
       new TopLevelUnionTransformer(
-      new IntersectTransformer(
-      new MinusTransformer(
+      new MinusIntersectTransformer(
       new NaturalJoinTransformer(
-      new AllAnyTransformer(
       new OrderByNotInSelectListTransformer(
       new RowNumTransformer(
       new BetweenTransformer(
       new UsingTransformer(
       new SchemaDotTableTransformer(
-      new NothingTransformer()))))))))))))))))))))))))))))))))))))))));
+      new NothingTransformer())))))))))))))))))))))))))))))))))))));
 
   private TransformerBuilder() {
   }

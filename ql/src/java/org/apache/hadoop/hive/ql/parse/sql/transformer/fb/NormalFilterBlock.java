@@ -29,6 +29,10 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
 
 public abstract class NormalFilterBlock extends BaseFilterBlock {
 
+  /*
+   * This class has two subclasses, CorrelatedFilterBlock and UnCorrelatedFilterBlock.<br>
+   * Store correlated columns in upper QueryBlock and store uncorrelated columns in current QueryBlock.
+   */
   @Override
   public void prepare(FilterBlockContext fbContext, TranslateContext context, Stack<CommonTree> selectStack)
       throws SqlXlateException {
@@ -47,6 +51,11 @@ public abstract class NormalFilterBlock extends BaseFilterBlock {
         tempQS.push(fbContext.getQueryStack().pop());
         tempTS.push(fbContext.getTypeStack().pop());
       }
+      // both correlated and uncorrelated columns will be stored in QueryBlock.
+      /*
+       * here use add(FilterBlockUtil.cloneTree(node)) will detach the relation of "node" with WhereFilterColumns
+       * because the column in WHERE will not be refreshed.
+       */
       fbContext.getQueryStack().peek().getWhereFilterColumns().add(FilterBlockUtil.cloneTree(node));
       for (int i = 0; i < level; i++) {
         fbContext.getTypeStack().push(tempTS.pop());

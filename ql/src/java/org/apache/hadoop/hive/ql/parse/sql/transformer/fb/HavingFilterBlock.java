@@ -84,7 +84,9 @@ public class HavingFilterBlock extends TypeFilterBlock {
     topQuery.setRebuildQueryForTransfer();
     topQuery.setQueryForHaving(newSelect);
     fbContext.getSelectStack().pop();
+    fbContext.getSelectStackForTransfer().pop();
     fbContext.getSelectStack().push(newSelect);
+    fbContext.getSelectStackForTransfer().push(newSelect);
   }
 
   private Set<CommonTree> getAllUncorrelatedFilterNodes(FilterBlock fb) {

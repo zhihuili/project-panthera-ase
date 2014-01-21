@@ -80,17 +80,21 @@ public class QueryBlock extends BaseFilterBlock {
   public void process(FilterBlockContext fbContext, TranslateContext context)
       throws SqlXlateException {
 
+    // store select column alias user defined.
     preProcessQueryBlock();
 
     fbContext.getQueryStack().push(this);
     fbContext.getSelectStack().push(this.getASTNode());
+    fbContext.getSelectStackForTransfer().push(this.getASTNode());
 
     processChildren(fbContext, context);
 
+    // restore select column alias user defined
     postProcessQueryBlock();
 
     if (!(this.getParent() instanceof SubQFilterBlock)) {
       // current' is top query block, add transformedNode to origin tree
+      // top queryBlock shall not have any correlated filter blocks.
       assert (!whereCFlag && !havingCFlag);
       if (this.getTransformedNode() != null) {
         if (this.getTransformedNode().getType() == PantheraParser_PLSQLParser.SUBQUERY && this.getTransformedNode().getChildCount() == 1) {
@@ -100,21 +104,26 @@ public class QueryBlock extends BaseFilterBlock {
         if (this.getTransformedNode().getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT || subQueryNode.getChildCount() > 1) {
           subQueryNode.replaceChildren(this.getASTNode().childIndex, this.getASTNode().childIndex, this.getTransformedNode());
         } else {
+          // the transformed node is not SELECT and subQueryNode only has one child
+          // FIXME: if subQueryNode is UNION, might cause problem.
           CommonTree nil = new CommonTree();
           nil.addChildren(this.getTransformedNode().getChildren());
           subQueryNode.replaceChildren(0, 0, nil);
         }
       }
-    } else {
+    } else { // not top QueryBlock, is a sub Query
+      // transfer subQ into JOIN
       // TODO rebuild selectList here
       execute(fbContext, context);
     }
 
     fbContext.getSelectStack().pop();
+    fbContext.getSelectStackForTransfer().pop();
     fbContext.getQueryStack().pop();
 
     // limit
     if (limit != null && this.getTransformedNode() != null) {
+      // what if transformed node is SUBQUERY ?
       this.getTransformedNode().addChild(limit);
     }
 
@@ -154,6 +163,13 @@ public class QueryBlock extends BaseFilterBlock {
     postProcessQB(transformedNode, selectList);
   }
 
+  /**
+   * process transformed select list corresponding the current QueryBlock. <br>
+   * Process each top SELECT. Top SELECT might be in format of UNION.
+   *
+   * @param transformed
+   * @param selectList
+   */
   private void postProcessQB(CommonTree transformed, CommonTree selectList) {
     if (transformed.getType() == PantheraParser_PLSQLParser.SUBQUERY) {
       for (int i = 0; i < transformed.getChildCount(); i++) {
@@ -166,6 +182,14 @@ public class QueryBlock extends BaseFilterBlock {
     }
   }
 
+  /**
+   * recover user defined alias <br>
+   * <li>if transformed select item has alias, replace it with user defined alias stored in preDefinedAliasList,
+   * <li>if not, add user defined alias
+   *
+   * @param transformed
+   * @param selectList
+   */
   private void postProcessQueryBlock(CommonTree transformed, CommonTree selectList) {
     CommonTree recoverList = selectList;
     recoverList = (CommonTree) transformed.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
@@ -182,6 +206,10 @@ public class QueryBlock extends BaseFilterBlock {
     }
   }
 
+  /*
+   * store select list columns' alias in proDefineAliasList.
+   * if column has alias, then store alias node, if not store null.
+   */
   private void preProcessQueryBlock() {
     CommonTree selectList = (CommonTree) this.getASTNode().getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
     if (selectList == null) {
@@ -211,9 +239,6 @@ public class QueryBlock extends BaseFilterBlock {
     limit = (CommonTree) this.getASTNode().getFirstChildWithType(PantheraExpParser.LIMIT_VK);
   }
 
-  void buildTableNameSet() {
-    tableNameSet = new HashSet<String>();
-  }
 
   void buildQueryForTransfer() {
     CommonTree root = this.getASTNode();
@@ -233,10 +258,6 @@ public class QueryBlock extends BaseFilterBlock {
         .getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST), countAsterisk, order);
 
     queryForTransfer = cloneRoot;
-  }
-
-  public Set<String> getTableNameSet() {
-    return tableNameSet;
   }
 
   /**
@@ -266,6 +287,7 @@ public class QueryBlock extends BaseFilterBlock {
     if (this.hadRebuildQueryForTransfer) {
       tree = FilterBlockUtil.cloneTree(queryForTransfer);
     }
+    // clone tree including group branch if there is GROUP but excluding HAVING branch
     CommonTree group = (CommonTree) tree.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
     if (group != null) {
       CommonTree token = (CommonTree) group.getChild(group.getChildCount() - 1);
@@ -276,10 +298,14 @@ public class QueryBlock extends BaseFilterBlock {
     return tree;
   }
 
-  public void setAggregationList(List<CommonTree> aggregationList) {
-    this.aggregationList = aggregationList;
-  }
-
+  /**
+   * 1.collect all the correlated filters if there exists for current Query Block.
+   * 2.Triggered to process subQuery into join. Which will call FilterBlockProcessor classes.
+   *
+   * @param fbContext
+   * @param context
+   * @throws SqlXlateException
+   */
   void execute(FilterBlockContext fbContext, TranslateContext context) throws SqlXlateException {
     FilterBlock whereCFB = new CorrelatedFilterBlock();
     FilterBlock havingCFB = new CorrelatedFilterBlock();
@@ -287,6 +313,7 @@ public class QueryBlock extends BaseFilterBlock {
       if (whereCFB.getASTNode() == null) {
         whereCFB.setASTNode(oneCFB.getASTNode());
       } else {
+        // collect all correlated filters for in WHERE clause in current queryBlock.
         CommonTree and = FilterBlockUtil.createSqlASTNode(whereCFB.getASTNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_AND, "and");
         and.addChild(whereCFB.getASTNode());
         and.addChild(oneCFB.getASTNode());
@@ -297,6 +324,7 @@ public class QueryBlock extends BaseFilterBlock {
       if (havingCFB.getASTNode() == null) {
         havingCFB.setASTNode(oneCFB.getASTNode());
       } else {
+        // collect all correlated filters for in HAVING clause in current queryBlock.
         CommonTree and = FilterBlockUtil.createSqlASTNode(havingCFB.getASTNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_AND, "and");
         and.addChild(havingCFB.getASTNode());
         and.addChild(oneCFB.getASTNode());
@@ -304,6 +332,7 @@ public class QueryBlock extends BaseFilterBlock {
       }
     }
     if (this.getASTNode().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP) == null) {
+      // process subQ in WHERE clause
       if (!whereCFlag) {
         FilterBlockProcessorFactory.getUnCorrelatedProcessor(
             fbContext.getSubQStack().peek().getASTNode()).process(fbContext, this, context);
@@ -314,6 +343,7 @@ public class QueryBlock extends BaseFilterBlock {
         this.setTransformedNode(whereCFB.getTransformedNode());
       }
     } else {
+      // process subQ in HAVING clause
       if (!whereCFlag) {
         if (!havingCFlag) {
           FilterBlockProcessorFactory.getUnCorrelatedProcessor(
@@ -332,8 +362,20 @@ public class QueryBlock extends BaseFilterBlock {
     return;
   }
 
+  void buildTableNameSet() {
+    tableNameSet = new HashSet<String>();
+  }
+
+  public Set<String> getTableNameSet() {
+    return tableNameSet;
+  }
+
   public CountAsterisk getCountAsterisk() {
     return countAsterisk;
+  }
+
+  public void setAggregationList(List<CommonTree> aggregationList) {
+    this.aggregationList = aggregationList;
   }
 
   public List<CommonTree> getAggregationList() {
@@ -412,7 +454,6 @@ public class QueryBlock extends BaseFilterBlock {
   public boolean getRebuildQueryForTransfer() {
     return this.hadRebuildQueryForTransfer;
   }
-
 
   public void setWhereCFlag() {
     whereCFlag = true;

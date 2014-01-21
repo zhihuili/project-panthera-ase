@@ -17,11 +17,6 @@
  */
 package org.apache.hadoop.hive.ql.parse.sql.transformer;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
@@ -88,31 +83,11 @@ public class InTransformer extends BaseSqlASTTransformer {
       return true;
     }
     CommonTree rightIn = (CommonTree) bottomSelectList.getChild(0).getChild(0).getChild(0);
-    List<CommonTree> sfList = new ArrayList<CommonTree>();
-    FilterBlockUtil.findNode(rightIn, PantheraParser_PLSQLParser.STANDARD_FUNCTION, sfList);
-    // TODO ugly hard code
-    Set<String> aggregation = new HashSet<String>();
-    aggregation.add("max");
-    aggregation.add("min");
-    aggregation.add("sum");
-    aggregation.add("count");
-    aggregation.add("avg");
-    aggregation.add("stddev_samp");
-    aggregation.add("stddev");
-    if (sfList.size() != 0) {
-      Boolean aggrFlag = false;
-      for (CommonTree check : sfList) {
-        if (aggregation.contains(check.getChild(0).getText())) {
-          aggrFlag = true;
-          break;
-        }
-      }
-      if (aggrFlag) {
-        CommonTree group = (CommonTree) bottomSelect
-            .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
-        if (group == null) {
-          return false;
-        }
+    if (FilterBlockUtil.isAggrFunc(rightIn)) {
+      CommonTree group = (CommonTree) bottomSelect
+          .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
+      if (group == null) {
+        return false;
       }
     }
     return true;

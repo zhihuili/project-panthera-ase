@@ -67,21 +67,45 @@ public class GroupElementNormalizeTransformer extends BaseSqlASTTransformer {
     if (group == null) {
       return;
     }
+    CommonTree selectList = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
+    if (selectList == null) {
+      return;
+    }
     List<CommonTree> allGroupList = new ArrayList<CommonTree>();
     for (int i = 0; i < group.getChildCount(); i++) {
       CommonTree groupElement = (CommonTree) group.getChild(i);
       if (groupElement.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING) {
         continue;
       }
-      allGroupList.add((CommonTree) groupElement.getChild(0).getChild(0));
+      CommonTree cas = (CommonTree) groupElement.getChild(0).getChild(0);
+      // for group by position, e.g. group by 1, 2, change the position with select item
+      if (cas.getType() == PantheraParser_PLSQLParser.UNSIGNED_INTEGER) {
+        try {
+          int index = Integer.valueOf(cas.getText());
+          if (index > 0 && index <= selectList.getChildCount()) {
+            // replace the group node with correspond select item
+            int childIdx = cas.getChildIndex();
+            CommonTree expr = (CommonTree) cas.getParent();
+            expr.replaceChildren(childIdx, childIdx,
+                FilterBlockUtil.cloneTree((CommonTree) selectList.getChild(index - 1).getChild(0).getChild(0)));
+            cas = (CommonTree) expr.getChild(0);
+          }
+        } catch (Exception e) {
+          // do nothing here
+        }
+      }
+      allGroupList.add(cas);
     }
-    CommonTree selectList = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
-    assert (selectList != null);
+
     normalizeGroup(selectList, allGroupList);
     // normalize twice
     normalizeGroup(selectList, allGroupList);
   }
 
+  /**
+   * 1,verify that all non-aggregation select items are in group by list
+   * 2,sync the select column and group by column with the same format. (table.column/column)
+   */
   private void normalizeGroup(CommonTree selectList, List<CommonTree> allGroupList) throws SqlXlateException {
     for (int i = 0; i < selectList.getChildCount(); i++) {
       CommonTree selectItem = (CommonTree) selectList.getChild(i);

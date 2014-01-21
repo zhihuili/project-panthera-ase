@@ -98,5 +98,15 @@ public interface FilterBlock {
    */
   void process(FilterBlockContext fbContext, TranslateContext context) throws SqlXlateException;
 
+  /**
+   * Do some preparation jobs for filter block. <br>
+   * For example: get correlated and uncorrelated columns in filterBlock and store them in a specific
+   * place for later processing such as adding into select list and equaljoin condition, etc.. <br>
+   *
+   * @param fbContext
+   * @param context
+   * @param selectStack
+   * @throws SqlXlateException
+   */
   void prepare(FilterBlockContext fbContext, TranslateContext context, Stack<CommonTree> selectStack) throws SqlXlateException;
 }

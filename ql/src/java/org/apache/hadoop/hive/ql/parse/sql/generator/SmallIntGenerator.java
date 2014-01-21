@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,32 +15,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hive.ql.parse.sql.transformer;
-
-import java.util.List;
+package org.apache.hadoop.hive.ql.parse.sql.generator;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.HiveParser;
+import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
+import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 
-/**
- * transform INTERSECT to LEFTSEMI JOIN.
- *
- * IntersectTransformer.
- *
- */
-public class IntersectTransformer extends SetOperatorTransformer {
+public class SmallIntGenerator extends BaseHiveASTGenerator {
 
   @Override
-  CommonTree makeJoinNode(CommonTree on) {
-    CommonTree join = FilterBlockUtil.createSqlASTNode(on, PantheraExpParser.JOIN_DEF, "join");
-    join.addChild(FilterBlockUtil.createSqlASTNode(on, PantheraExpParser.LEFTSEMI_VK, "leftsemi"));
-    return join;
-  }
-
-  @Override
-  CommonTree makeWhere(CommonTree setOperator, CommonTree leftTableRefElement, CommonTree rightTableRefElement,
-      List<CommonTree> leftColumnAliasList, List<CommonTree> rightColumnAliasList) {
-    return null;
+  public boolean generate(ASTNode hiveRoot, CommonTree sqlRoot, ASTNode currentHiveNode,
+      CommonTree currentSqlNode, TranslateContext context) throws SqlXlateException {
+    return super.baseProcess(HiveParser.TOK_SMALLINT, "TOK_SMALLINT", hiveRoot, sqlRoot, currentHiveNode,
+        currentSqlNode, context);
   }
 }

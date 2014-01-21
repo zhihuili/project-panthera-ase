@@ -20,7 +20,6 @@ package org.apache.hadoop.hive.ql.parse.sql;
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
 
@@ -28,12 +27,37 @@ public class SqlASTChecker {
   public SqlASTErrorNode errorNode = null;
   private static final Log LOG = LogFactory.getLog("hive.ql.parse.sql.SqlParseDriver");
 
-  public void checkSqlAST(Object tree) throws SqlParseException, SqlXlateException{
+  /**
+   * check whether the AST Tree is legal for Panthera
+   * @param tree
+   * @param originCmd
+   *        the origin query
+   * @throws SqlParseException
+   *         need to use Hive run again, throw SqlParseException
+   * @throws SqlXlateException
+   *         if do not want to use Hive to run again, throw SqlXlateException
+   *         currently, only ID start with PantheraConstants.PANTHERA_PREFIX would throw SqlXlateException
+   */
+  public void checkSqlAST(Object tree, String originCmd) throws SqlParseException, SqlXlateException{
     if (tree instanceof SqlASTNode) {
-      checkSupport((CommonTree) tree);
+      if (((CommonTree) tree).getType() == PantheraParser_PLSQLParser.ID
+          //ID begin with PantheraConstants.PANTHERA_PREFIX
+          && ((CommonTree) tree).getText().startsWith(PantheraConstants.PANTHERA_PREFIX)) {
+        //when SqlXlateException encountered, Panthera would not use Hive to run the queries again
+        throw new SqlXlateException((CommonTree) tree, "Table/Column name/alias begin with \"" +
+            PantheraConstants.PANTHERA_PREFIX + "\" is reserved by " + PantheraConstants.PANTHERA_ASE);
+      }
+      try {
+        checkSupport((CommonTree) tree);
+      } catch (SqlXlateException e) {
+        LOG.error("SQL parse error: " + e.toString());
+        e.outputException(originCmd);
+        throw new SqlParseException(e.getMessage());
+      }
       for (int i=0; i < ((SqlASTNode) tree).getChildCount(); i++) {
         ((SqlASTNode) tree).token.setCharPositionInLine(((SqlASTNode) tree).getCharPositionInLine());
-        checkSqlAST( ((SqlASTNode) tree).getChild(i) );
+        ((SqlASTNode) tree).token.setLine(((SqlASTNode) tree).getLine());
+        checkSqlAST( ((SqlASTNode) tree).getChild(i), originCmd);
       }
     } else if (tree instanceof SqlASTErrorNode) {
       errorNode = (SqlASTErrorNode) tree;
@@ -44,22 +68,25 @@ public class SqlASTChecker {
     }
   }
 
-  private void checkSupport(CommonTree tree) throws SqlXlateException{
+  /**
+   *
+   * @param tree
+   * @throws SqlXlateException
+   *         if can get node position info, throw SqlXlateException
+   */
+  private void checkSupport(CommonTree tree) throws SqlXlateException {
     switch(tree.getType()) {
     case PantheraParser_PLSQLParser.ID:
-      //ID begin with "panthera_"
-      if(tree.getText().startsWith("panthera_")) {
-        throw new SqlXlateException(tree, "Table/Column name/alias begin with \"panthera_\" is reserved by Panthera");
-      }
       // handle "limit"
       // select * from (select s_grade,s_city from staff limit 10)t1; this query will pass PL_SQL Parser
       if (tree.getText().equals("limit")) {
-        throw new SqlXlateException(tree, "\"limit\" is reserved by Panthera, and not supported");
+        throw new SqlXlateException(tree, "\"limit\" is reserved by Panthera, not supported");
       }
       break;
     case PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT:
       //select in select-list
-      if(FilterBlockUtil.hasAncestorOfType(tree, PantheraParser_PLSQLParser.SELECT_LIST)) {
+      if(tree.hasAncestor(PantheraParser_PLSQLParser.SELECT_LIST)) {
+        //when SqlXlateException encountered, Panthera would not use Hive to run the queries again.
         throw new SqlXlateException(tree, "Currently Panthera don't support subQuery in select-list!");
       }
       break;

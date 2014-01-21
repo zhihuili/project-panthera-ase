@@ -150,9 +150,15 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.NATIVE_DATATYPE, new NothingTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.INT_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.CHAR_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.STRING_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.BOOLEAN_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.DOUBLE_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.FLOAT_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.PRECISION, new NothingTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.DECIMAL_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.DEC_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.TIMESTAMP_VK, new NaiveTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.SMALLINT_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.YEAR_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.MONTH_VK, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.DAY_VK, new NaiveTextGenerator());
@@ -162,6 +168,8 @@ public class TextGeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.LEFT_PAREN, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.RIGHT_PAREN, new NaiveTextGenerator());
     genMap.put(PantheraParser_PLSQLParser.CONCATENATION_OP, new ConcatenationOpTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.CUSTOM_TYPE, new NothingTextGenerator());
+    genMap.put(PantheraParser_PLSQLParser.TYPE_NAME, new NothingTextGenerator());
   }
 
   private TextGeneratorFactory() {

@@ -38,9 +38,24 @@ public class StandardFunctionGenerator extends BaseHiveASTGenerator {
 
     if (currentSqlNode.getType() == PantheraParser_PLSQLParser.ROUTINE_CALL) {
       tokFunc = SqlXlateUtil.newASTNode(HiveParser.TOK_FUNCTION, "TOK_FUNCTION");
-      CommonTree Arguments = (CommonTree) currentSqlNode.getFirstChildWithType(PantheraParser_PLSQLParser.ARGUMENTS);
-      if (Arguments != null) {
-        CommonTree firstArg = (CommonTree) Arguments.getFirstChildWithType(PantheraParser_PLSQLParser.ARGUMENT);
+      assert(currentSqlNode.getChild(0) != null && currentSqlNode.getChild(0).getChild(0) != null);
+      CommonTree arguments = (CommonTree) currentSqlNode.getFirstChildWithType(PantheraParser_PLSQLParser.ARGUMENTS);
+      if (currentSqlNode.getChild(0).getChild(0).getText().equalsIgnoreCase("nullif")) {
+        // nullif(a,b) should be generated as (case when a=b then null else a end)
+        super.attachHiveNode(hiveRoot, currentHiveNode, tokFunc);
+        ASTNode whenNode = super.newHiveASTNode(HiveParser.KW_WHEN, "when");
+        super.attachHiveNode(hiveRoot, tokFunc, whenNode);
+        ASTNode eqNode = super.newHiveASTNode(HiveParser.EQUAL, "=");
+        super.attachHiveNode(hiveRoot, tokFunc, eqNode);
+        ASTNode nullNode = super.newHiveASTNode(HiveParser.TOK_NULL, "TOK_NULL");
+        super.attachHiveNode(hiveRoot, tokFunc, nullNode);
+        assert(arguments != null && arguments.getChildCount() == 2);
+        return super.generateChildren(hiveRoot, sqlRoot, tokFunc, (CommonTree) arguments.getChild(0), context)
+            && super.generateChildren(hiveRoot, sqlRoot, eqNode, (CommonTree) arguments.getChild(0), context)
+            && super.generateChildren(hiveRoot, sqlRoot, eqNode, (CommonTree) arguments.getChild(1), context);
+      }
+      if (arguments != null) {
+        CommonTree firstArg = (CommonTree) arguments.getFirstChildWithType(PantheraParser_PLSQLParser.ARGUMENT);
         if (firstArg != null) {
           CommonTree expr = (CommonTree) firstArg.getFirstChildWithType(PantheraParser_PLSQLParser.EXPR);
           if (expr != null) {

@@ -71,7 +71,8 @@ public class FilterBlockAdjustTransformer extends BaseSqlASTTransformer {
     transformFBDeepFirst(qf, fb, context, false);
   }
 
-  private void transformFBDeepFirst(QueryInfo qf, FilterBlock fb, TranslateContext context, boolean inHavingFB)
+  private void transformFBDeepFirst(QueryInfo qf, FilterBlock fb, TranslateContext context,
+      boolean inHavingFB)
       throws SqlXlateException {
     for (FilterBlock childfb : fb.getChildren()) {
       if (childfb instanceof HavingFilterBlock) {
@@ -87,14 +88,14 @@ public class FilterBlockAdjustTransformer extends BaseSqlASTTransformer {
       FilterBlock rightFB = fb.getChildren().get(1);
       if (!(leftFB instanceof SubQFilterBlock && rightFB instanceof SubQFilterBlock)) {
         // need handle
-        CommonTree badSubQuery = FilterBlockUtil.firstAncestorOfType(fb.getASTNode(),
+        CommonTree badSubQuery = (CommonTree) fb.getASTNode().getAncestor(
             PantheraParser_PLSQLParser.SUBQUERY);
-        while(badSubQuery.getParent().getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_UNION) {
+        while (badSubQuery.getParent().getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_UNION) {
           badSubQuery = (CommonTree) badSubQuery.getParent().getParent();
         }
         if (badSubQuery.getParent().getType() == PantheraParser_PLSQLParser.SELECT_STATEMENT) {
           // already in a separated QueryInfo
-          CommonTree select = FilterBlockUtil.firstAncestorOfType(fb.getASTNode(), PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
+          CommonTree select = (CommonTree) fb.getASTNode().getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
           transformBadOrToUnionAndAddLevel(qf, select, fb, context, inHavingFB);
         } else {
           // in a subQuery like IN/COMPARE/EXISTS, NOTIN/NOTEXISTS
@@ -108,7 +109,8 @@ public class FilterBlockAdjustTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  private void transformBadOrToUpperOr(CommonTree subQuery, FilterBlock orFB, TranslateContext context) {
+  private void transformBadOrToUpperOr(CommonTree subQuery, FilterBlock orFB,
+      TranslateContext context) {
     CommonTree splitToken = (CommonTree) subQuery.getParent();
     CommonTree orRoot = orFB.getASTNode();
     CommonTree rightTree = (CommonTree) orRoot.deleteChild(1);
@@ -126,7 +128,8 @@ public class FilterBlockAdjustTransformer extends BaseSqlASTTransformer {
     splitToken.getParent().replaceChildren(splitToken.childIndex, splitToken.childIndex, or);
   }
 
-  private void transformBadOrToUpperAnd(CommonTree subQuery, FilterBlock orFB, TranslateContext context) {
+  private void transformBadOrToUpperAnd(CommonTree subQuery, FilterBlock orFB,
+      TranslateContext context) {
     CommonTree splitToken = (CommonTree) subQuery.getParent();
     if (subQuery.getParent().getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_EXISTS) {
       splitToken = (CommonTree) subQuery.getParent().getParent();
@@ -158,7 +161,8 @@ public class FilterBlockAdjustTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  private void transformBadOrToUnionAndAddLevel(QueryInfo qf, CommonTree select, FilterBlock orFB, TranslateContext context, boolean inHavingFB) throws SqlXlateException {
+  private void transformBadOrToUnionAndAddLevel(QueryInfo qf, CommonTree select, FilterBlock orFB,
+      TranslateContext context, boolean inHavingFB) throws SqlXlateException {
     // orFB must has SubQFB and UncorrelatedFB as children
     // do nothing
   }

@@ -101,7 +101,7 @@ public class QueryInfo {
   /**
    * Map from select or from key to row info.
    */
-  private final Map<Integer, List<Column>> keyToRowInfo = new HashMap<Integer, List<Column>>();
+  private final Map<String, List<Column>> keyToRowInfo = new HashMap<String, List<Column>>();
 
   // alias or column in SELECT_LIST
   private final Map<CommonTree, List<String>> selectLists = new HashMap<CommonTree, List<String>>();
@@ -423,10 +423,12 @@ public class QueryInfo {
   }
 
   public List<Column> getRowInfo(CommonTree key) {
-    List<Column> rowInfo = keyToRowInfo.get(key.getCharPositionInLine());
+    // use lXcY to be key of RowInfo. X is line number, Y is charpositioninline.
+    String k = "l" + key.getLine() + "c" + key.getCharPositionInLine();
+    List<Column> rowInfo = keyToRowInfo.get(k);
     if(rowInfo == null) {
       rowInfo = new ArrayList<Column>();
-      keyToRowInfo.put(key.getCharPositionInLine(), rowInfo);
+      keyToRowInfo.put(k, rowInfo);
     }
     return rowInfo;
   }

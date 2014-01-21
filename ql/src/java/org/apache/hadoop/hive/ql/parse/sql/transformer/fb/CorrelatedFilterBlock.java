@@ -55,44 +55,45 @@ public class CorrelatedFilterBlock extends NormalFilterBlock {
     }
   }
 
+  /*
+   * Store correlated and uncorrelated columns in QueryBlock. Also for aggregation functions in Having clause.
+   */
   @Override
   public void prepare(FilterBlockContext fbContext, TranslateContext context, Stack<CommonTree> selectStack)
       throws SqlXlateException {
+
+    // store columns
+    super.prepare(fbContext, context, selectStack);
+
+    // store aggregation functions.
     CommonTree normal = this.getASTNode();
     List<CommonTree> nodeList = new ArrayList<CommonTree>();
-
-    FilterBlockUtil.findNode(normal, PantheraParser_PLSQLParser.CASCATED_ELEMENT, nodeList);
-    for (CommonTree node : nodeList) {
-      if (node.getChild(0).getType() == PantheraParser_PLSQLParser.ROUTINE_CALL) {
-        continue;
-      }
-      int level = PLSQLFilterBlockFactory.getInstance().isCorrelated(fbContext.getqInfo(), selectStack, node);
-      Stack<QueryBlock> tempQS = new Stack<QueryBlock>();
-      Stack<TypeFilterBlock> tempTS = new Stack<TypeFilterBlock>();
-      for (int i = 0; i < level; i++) {
-        tempQS.push(fbContext.getQueryStack().pop());
-        tempTS.push(fbContext.getTypeStack().pop());
-      }
-      fbContext.getQueryStack().peek().getWhereFilterColumns().add(FilterBlockUtil.cloneTree(node));
-      for (int i = 0; i < level; i++) {
-        fbContext.getTypeStack().push(tempTS.pop());
-        fbContext.getQueryStack().push(tempQS.pop());
-      }
-    }
-
-    nodeList = new ArrayList<CommonTree>();
+    // for aggregation funcs, if it has correlated columns, need to store this function into QueryBlcok.
     FilterBlockUtil.findNode(normal, PantheraParser_PLSQLParser.STANDARD_FUNCTION, nodeList);
     for (CommonTree node : nodeList) {
+      // TODO: there might be other non aggregation functions have STANDARD_FUNCTION node.
       if (node.getChild(0).getText().equals("substring") || node.getChild(0).getText().equals("substr")) {
         continue;
       }
-      int level = PLSQLFilterBlockFactory.getInstance().isCorrelated(fbContext.getqInfo(), selectStack, FilterBlockUtil.findOnlyNode(node, PantheraParser_PLSQLParser.CASCATED_ELEMENT));
+      CommonTree cas = FilterBlockUtil.findOnlyNode(node, PantheraParser_PLSQLParser.CASCATED_ELEMENT);
+      int level;
+      if (cas != null) {
+        level = PLSQLFilterBlockFactory.getInstance().isCorrelated(fbContext.getqInfo(), selectStack, cas);
+      } else {
+        level = 0;
+      }
       Stack<QueryBlock> tempQS = new Stack<QueryBlock>();
       Stack<TypeFilterBlock> tempTS = new Stack<TypeFilterBlock>();
       for (int i = 0; i < level; i++) {
         tempQS.push(fbContext.getQueryStack().pop());
         tempTS.push(fbContext.getTypeStack().pop());
       }
+      // store aggregation into HavingFilterColumns. Aggregation function can not exists in WHERE clause.
+      // so the aggregation founded must be from HAVING clause.
+      /*
+       * here use "add(node)" instead of "add(FilterBlockUtil.cloneTree(node))", because the column name will be
+       * refreshed in HAVING clause
+       */
       fbContext.getQueryStack().peek().getHavingFilterColumns().add(node);
       for (int i = 0; i < level; i++) {
         fbContext.getTypeStack().push(tempTS.pop());

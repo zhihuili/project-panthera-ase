@@ -21,12 +21,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.antlr.runtime.tree.Tree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
@@ -101,9 +99,9 @@ public class Leftsemi2LeftJoinTransformer extends BaseSqlASTTransformer {
         //
         // Check if this is a equality expression between two tables's columns
         //
-        if (IsColumnRef(equalOp.getChild(0)) && IsColumnRef(equalOp.getChild(1))) {
-          String table1 = getTableName(qf, (CommonTree) equalOp.getChild(0).getChild(0));
-          String table2 = getTableName(qf, (CommonTree) equalOp.getChild(1).getChild(0));
+        if (FilterBlockUtil.IsColumnRef(equalOp.getChild(0)) && FilterBlockUtil.IsColumnRef(equalOp.getChild(1))) {
+          String table1 = FilterBlockUtil.getTableName(qf, (CommonTree) equalOp.getChild(0).getChild(0), false);
+          String table2 = FilterBlockUtil.getTableName(qf, (CommonTree) equalOp.getChild(1).getChild(0), false);
           //
           // Skip columns not in a src table.
           //
@@ -164,7 +162,7 @@ public class Leftsemi2LeftJoinTransformer extends BaseSqlASTTransformer {
     }
     for (CommonTree anyElement : anyElements) {
 
-      String tableName = getTableName(qf, anyElement);
+      String tableName = FilterBlockUtil.getTableName(qf, anyElement);
       if (tableName == null) {
         continue;
       }
@@ -174,61 +172,5 @@ public class Leftsemi2LeftJoinTransformer extends BaseSqlASTTransformer {
     }
     return false;
   }
-
-
-  private boolean IsColumnRef(Tree node) {
-    if (node.getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT
-        && node.getChild(0).getType() == PantheraParser_PLSQLParser.ANY_ELEMENT) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  /**
-   * get the table name of the column.
-   *
-   * this function is copied from CrossJoinTransformer
-   *
-   * @param qf
-   * @param anyElement
-   * @return
-   * @throws SqlXlateException
-   */
-  private String getTableName(QueryInfo qf, CommonTree anyElement) throws SqlXlateException {
-    String table = null;
-
-    CommonTree currentSelect = (CommonTree) anyElement
-        .getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
-
-    if (anyElement.getChildCount() > 1) {
-      table = anyElement.getChild(0).getText();
-      if (anyElement.getChildCount() > 2) {
-        // schema.table
-        table += ("." + anyElement.getChild(1).getText());
-        // merge schema and table as HIVE does not support schema.table.column in where clause.
-        anyElement.deleteChild(1);
-        ((CommonTree) anyElement.getChild(0)).getToken().setText(table);
-      }
-      //
-      // Return null table name if it is not a src table.
-      //
-      if (!qf.getSrcTblAliasForSelectKey(currentSelect).contains(table)) {
-        table = null;
-      }
-    } else {
-      String columnName = anyElement.getChild(0).getText();
-      List<Column> fromRowInfo = qf.getRowInfo((CommonTree) currentSelect
-          .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
-      for (Column col : fromRowInfo) {
-        if (col.getColAlias().equals(columnName)) {
-          table = col.getTblAlias();
-          break;
-        }
-      }
-    }
-    return table;
-  }
-
 }
 

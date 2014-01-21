@@ -280,7 +280,7 @@ public class SqlParseDriver {
     //check the tree
     SqlASTChecker checker = new SqlASTChecker();
     try {
-      checker.checkSqlAST(r.getTree());
+      checker.checkSqlAST(r.getTree(), command);
     } catch (SqlXlateException e) {
       LOG.error("SQL parse Error :" + e.toString());
       e.outputException(command);
@@ -301,8 +301,8 @@ public class SqlParseDriver {
       e.outputException(command);
       throw e;
     } catch (Exception e) {
-      LOG.error("Sql transform unknow error");
-      throw new SqlXlateException("Unknow error encountered, please check your input.");
+      LOG.error("Panthera encountered a known bug");
+      throw new SqlParseException("Panthera encountered a known bug");
     }
 
     LOG.info("Hive AST after translation : " + hiveAST.toStringTree());
@@ -323,7 +323,7 @@ public class SqlParseDriver {
    * @param isReEntry
    * @return
    */
-  public ASTNode parse(String command, Context ctx, boolean isReEntry) throws HiveParseException,
+  public ASTNode parse(String command, Context ctx, boolean isReEntry) throws
       ParseException, SqlParseException, SqlXlateException {
     // first time to Parse, will first use SQL Parser, then HIVE Parser if SQL Parser failed
     if (!isReEntry) {
@@ -351,6 +351,7 @@ public class SqlParseDriver {
           }
         } catch (SqlXlateException sqlXlateException) {
           // when encounter this exception, just rethrow exception instead try Hive parse again.
+          // Because this is a known exception which would not supported by either Panthera nor Hive.
           LOG.info("SQL parser failed because of sqlXlate error.");
           LOG.info("get SqlXlateException, would not try to use Hive Parser !");
           throw sqlXlateException;

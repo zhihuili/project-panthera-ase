@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Stack;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.hive.ql.parse.sql.PantheraConstants;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo;
@@ -69,109 +70,75 @@ public class PLSQLFilterBlockFactory extends FilterBlockFactory {
     return instance;
   }
 
+
   @Override
-  public int isCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack, CommonTree branch)
+  public int isCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack, CommonTree cascatedElement)
       throws SqlXlateException {
-    if (branch.getType() != PantheraParser_PLSQLParser.CASCATED_ELEMENT) {
-      branch = FilterBlockUtil.findOnlyNode(branch, PantheraParser_PLSQLParser.CASCATED_ELEMENT);
-      if (branch == null) {
+    if (cascatedElement.getType() != PantheraParser_PLSQLParser.CASCATED_ELEMENT) {
+      cascatedElement = FilterBlockUtil.findOnlyNode(cascatedElement, PantheraParser_PLSQLParser.CASCATED_ELEMENT);
+      if (cascatedElement == null) {
         return 0;
       }
     }
-    Stack<CommonTree> tempStack = new Stack<CommonTree>();
-    CommonTree child = (CommonTree) branch.getChild(0);
-    if (child.getType() == PantheraParser_PLSQLParser.ANY_ELEMENT) {
-      if (selectStack.size() <= 1) {
-        return 0;
-      }
-      int level = -1;
-      if (child.getChildCount() == 2) {// tableName.columnName
-        while (selectStack.size() > 0) {
-          if (SqlXlateUtil.containTableName(child.getChild(0).getText(), (CommonTree) selectStack
-              .peek().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM))) {
-            level = tempStack.size();
-            break;
-          }
-          tempStack.push(selectStack.pop());
-        }
-      } else {// only columnName
-        String columnName = child.getChild(0).getText();
-
-        while (selectStack.size() > 0) {
-          CommonTree from = (CommonTree) selectStack.peek().getFirstChildWithType(
-              PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
-          List<Column> columnList = qInfo.getRowInfo(from);
-          boolean find = false;
-          for (Column column : columnList) {
-            if (columnName.equals(column.getColAlias())) {
-              find = true;
-              break;
-            }
-          }
-          if (find) {
-            level = tempStack.size();
-            break;
-          }
-          tempStack.push(selectStack.pop());
-        }
-      }
-      while (tempStack.size() > 0) {
-        selectStack.push(tempStack.pop());
-      }
-      if (level >= 0) {
-        return level;
-      } else {
-        throw new SqlXlateException((CommonTree) child.getChild(0), "Element not find in scope.");
-      }
+    CommonTree anyElement = (CommonTree) cascatedElement.getChild(0);
+    if (anyElement.getType() == PantheraParser_PLSQLParser.ANY_ELEMENT) {
+      return isAnyElementCorrelated(qInfo, selectStack, anyElement);
     }
     return 0;
   }
 
- @Override
- public int isAnyElementCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack, CommonTree child)
-     throws SqlXlateException {
-   Stack<CommonTree> tempStack = new Stack<CommonTree>();
-   if (selectStack.size() <= 1) {
-     return 0;
-   }
-   int level = -1;
-   if (child.getChildCount() == 2) {// tableName.columnName
-     while (selectStack.size() > 0) {
-       if (SqlXlateUtil.containTableName(child.getChild(0).getText(), (CommonTree) selectStack
-           .peek().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM))) {
-         level = tempStack.size();
-         break;
-       }
-       tempStack.push(selectStack.pop());
-     }
-   } else {// only columnName
-     String columnName = child.getChild(0).getText();
+  @Override
+  public int isAnyElementCorrelated(QueryInfo qInfo, Stack<CommonTree> selectStack,
+      CommonTree anyElement)
+      throws SqlXlateException {
+    Stack<CommonTree> tempStack = new Stack<CommonTree>();
+    if (selectStack.size() <= 1) {
+      return 0;
+    }
+    int level = -1;
+    if (anyElement.getChildCount() == 2) {
+      String tablename = anyElement.getChild(0).getText();
+      // tableName.columnName
+      if (tablename.startsWith(PantheraConstants.PANTHERA_UPPER)) {
+        // secret sauce for some cases need add alias later!
+        return 1;
+      }
+      while (selectStack.size() > 0) {
+        if (SqlXlateUtil.containTableName(tablename, (CommonTree) selectStack
+                .peek().getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM))) {
+          level = tempStack.size();
+          break;
+        }
+        tempStack.push(selectStack.pop());
+      }
+    } else {// only columnName
+      String columnName = anyElement.getChild(0).getText();
 
-     while (selectStack.size() > 0) {
-       CommonTree from = (CommonTree) selectStack.peek().getFirstChildWithType(
-           PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
-       List<Column> columnList = qInfo.getRowInfo(from);
-       boolean find = false;
-       for (Column column : columnList) {
-         if (columnName.equals(column.getColAlias())) {
-           find = true;
-           break;
-         }
-       }
-       if (find) {
-         level = tempStack.size();
-         break;
-       }
-       tempStack.push(selectStack.pop());
-     }
-   }
-   while (tempStack.size() > 0) {
-     selectStack.push(tempStack.pop());
-   }
-   if (level >= 0) {
-     return level;
-   } else {
-     throw new SqlXlateException((CommonTree) child.getChild(0), "Element not find in scope.");
-   }
- }
+      while (selectStack.size() > 0) {
+        CommonTree from = (CommonTree) selectStack.peek().getFirstChildWithType(
+            PantheraParser_PLSQLParser.SQL92_RESERVED_FROM);
+        List<Column> columnList = qInfo.getRowInfo(from);
+        boolean find = false;
+        for (Column column : columnList) {
+          if (columnName.equals(column.getColAlias())) {
+            find = true;
+            break;
+          }
+        }
+        if (find) {
+          level = tempStack.size();
+          break;
+        }
+        tempStack.push(selectStack.pop());
+      }
+    }
+    while (tempStack.size() > 0) {
+      selectStack.push(tempStack.pop());
+    }
+    if (level >= 0) {
+      return level;
+    } else {
+      throw new SqlXlateException((CommonTree) anyElement.getChild(0), "Element not find in scope.");
+    }
+  }
 }

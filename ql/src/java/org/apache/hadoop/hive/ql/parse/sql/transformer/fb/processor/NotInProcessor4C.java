@@ -28,6 +28,10 @@ import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.PLSQLFilterBlockFactor
 
 /**
  * Process correlated NOT IN in WHERE subquery<br>
+ * Transfer NOT IN to NOT EXISTS. <br>
+ * For Oracle, "null not in correlated subQ" is always true.
+ * "null in correlated subQ" is always false.
+ * "null in/not in uncorrelated subQ" is always false.
  * NotInProcessor4C.
  *
  */
@@ -45,7 +49,7 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
       throw new SqlXlateException(leftIn, "not support element from outter query as NOT_IN sub-query node");
     }
     fbContext.getSelectStack().push(sq);
-    buildAnyElement(leftIn, topSelect);
+    super.buildAnyElement(leftIn, topSelect, false);
 
     if (bottomSelect.getFirstChildWithType(PantheraExpParser.SELECT_LIST).getChildCount() > 1) {
       throw new SqlXlateException((CommonTree) bottomSelect.getFirstChildWithType(PantheraExpParser
@@ -54,39 +58,19 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
     CommonTree rightIn = (CommonTree) ((CommonTree) bottomSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST)).getChild(0).getChild(0).getChild(0);
     // rightIn do not have to check level
-    buildAnyElement(rightIn, bottomSelect);
+    super.buildAnyElement(rightIn, bottomSelect, true);
 
     CommonTree equal = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.EQUALS_OP, "=");
     equal.addChild(leftIn);
     equal.addChild(rightIn);
 
-    CommonTree where = (CommonTree) bottomSelect
-        .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_WHERE);
-    if (where == null) {
-      where = FilterBlockUtil.createSqlASTNode(equal, PantheraExpParser.SQL92_RESERVED_WHERE, "where");
-      CommonTree logicEx = FilterBlockUtil.createSqlASTNode(equal, PantheraExpParser.LOGIC_EXPR, "LOGIC_EXPR");
-      where.addChild(logicEx);
-    }
-    CommonTree logicExpr = (CommonTree) where.getChild(0);
-    CommonTree oldCondition = (CommonTree) logicExpr.deleteChild(0);
     CommonTree topand = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.SQL92_RESERVED_AND, "and");
-    if (oldCondition != null) {
-      CommonTree and = FilterBlockUtil.createSqlASTNode(subQNode, PantheraExpParser.SQL92_RESERVED_AND, "and");
-      logicExpr.addChild(and);
-      and.addChild(oldCondition);
-      and.addChild(equal);
-
-      topand.addChild(and);
-    } else {
-      logicExpr.addChild(equal);
-
-      topand.addChild(equal);
-    }
+    topand.addChild(equal);
     topand.addChild(fb.getASTNode());
     fb.setASTNode(topand);
 
     LOG.info("Transform NOT IN to NOT EXISTS:"
-        + where.toStringTree().replace('(', '[').replace(')', ']'));
+        + topand.toStringTree().replace('(', '[').replace(')', ']'));
 
     CommonTree selectList = (CommonTree) bottomSelect
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST);
@@ -104,25 +88,5 @@ public class NotInProcessor4C extends CommonFilterBlockProcessor {
      */
     //super.processNotExistsCByLeftJoin();
     super.processNotExistsC();
-  }
-
-  void buildAnyElement(CommonTree leftIn, CommonTree select) {
-    if (leftIn.getType() == PantheraExpParser.CASCATED_ELEMENT) {
-      CommonTree anyElement = (CommonTree) leftIn.getChild(0);
-      if (anyElement.getChildCount() == 1) {
-        CommonTree topFrom = (CommonTree) select
-            .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_FROM);
-        CommonTree tableRefElement = (CommonTree) topFrom.getChild(0).getChild(0);
-        CommonTree tableName;
-        if (tableRefElement.getChildCount() > 1) {
-          tableName = FilterBlockUtil.cloneTree((CommonTree) tableRefElement.getChild(0)
-              .getChild(0));
-        } else {
-          tableName = FilterBlockUtil.cloneTree((CommonTree) tableRefElement.getChild(0)
-              .getChild(0).getChild(0).getChild(0));
-        }
-        SqlXlateUtil.addCommonTreeChild(anyElement, 0, tableName);
-      }
-    }
   }
 }

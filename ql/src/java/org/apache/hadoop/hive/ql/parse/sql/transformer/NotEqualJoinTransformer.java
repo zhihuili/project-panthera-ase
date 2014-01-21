@@ -113,15 +113,7 @@ public class NotEqualJoinTransformer extends BaseSqlASTTransformer {
       // uncorrelated condition,transfer it to WHERE condition and remove it from SELECT_ITEM
       if (bottomKeys != null && topKeys == null) {
         FilterBlockUtil.deleteTheNode(op);
-        if (logic.getChildCount() > 0) {
-          CommonTree and = FilterBlockUtil
-              .createSqlASTNode(join, PantheraExpParser.SQL92_RESERVED_AND, "and");
-          and.addChild((CommonTree)logic.deleteChild(0));
-          and.addChild(op);
-          logic.addChild(and);
-        } else {
-          logic.addChild(op);
-        }
+        FilterBlockUtil.addConditionToLogicExpr(logic, op);
         for (CommonTree bottomkey : bottomKeys) {
           CommonTree anyElement = (CommonTree) bottomkey.getChild(0);
           // must have tablename under ANYELEMENT node

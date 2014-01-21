@@ -276,6 +276,14 @@ public class PrepareQueryInfoTransformer extends BaseSqlASTTransformer {
     return alias;
   }
 
+  /**
+   * Store select list of the select node into a string list.
+   * if *, store *; if has alias, store alias; if table.column/column, store column.
+   * if not direct table column ref, like expression/function, make the tree under EXPR node as string to store.
+   *
+   * @param select
+   * @param selectListStr
+   */
   private void buildSelectListStr(CommonTree select, List<String> selectListStr) {
     CommonTree selectList = (CommonTree) select
         .getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
@@ -291,7 +299,9 @@ public class PrepareQueryInfoTransformer extends BaseSqlASTTransformer {
         selectListStr.add(selectItem.getChild(1).getChild(0).getText());
         continue;
       }
-      if (selectItem.getChild(0).getChild(0).getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT) {
+      if (selectItem.getChild(0).getChild(0).getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT
+          // node under CASCATED_ELEMENT might be ROUTINE_CALL
+          && selectItem.getChild(0).getChild(0).getChild(0).getType() == PantheraParser_PLSQLParser.ANY_ELEMENT) {
         // Direct table column reference.
         CommonTree anyElement = (CommonTree) selectItem.getChild(0).getChild(0).getChild(0);
         selectListStr.add(anyElement.getChild(anyElement.getChildCount() - 1).getText());

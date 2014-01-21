@@ -19,6 +19,7 @@
 package org.apache.hadoop.hive.ql.parse.sql;
 
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,8 +28,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.antlr.runtime.CommonToken;
+import org.antlr.runtime.Token;
 import org.antlr.runtime.tree.CommonTree;
-import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -41,7 +42,6 @@ import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.RowResolver;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.objectinspector.StructField;
@@ -71,8 +71,22 @@ public final class SqlXlateUtil {
    *          text
    * @return ASTNode
    */
+  public static ASTNode newASTNode(CommonTree tree, int ttype, String text) {
+    return newASTNode(tree.getToken(), ttype, text);
+  }
+
+  public static ASTNode newASTNode(Token token, int ttype, String text) {
+    Token nToken = new CommonToken(token);
+    nToken.setText(text);
+    nToken.setType(ttype);
+    ASTNode n = new ASTNode(nToken);
+    LOG.debug("creating ASTNode :" + n.toString());
+    return n;
+  }
+
+  @Deprecated
   public static ASTNode newASTNode(int ttype, String text) {
-    ASTNode n = new ASTNode(new org.antlr.runtime.CommonToken(ttype, text));
+    ASTNode n = new ASTNode(new CommonToken(ttype, text));
     LOG.debug("creating ASTNode :" + n.toString());
     return n;
   }
@@ -84,7 +98,7 @@ public final class SqlXlateUtil {
    *          token
    * @return ASTNode
    */
-  public static ASTNode newASTNode(org.antlr.runtime.Token token) {
+  public static ASTNode newASTNode(Token token) {
     ASTNode n = new ASTNode(token);
     LOG.debug("creating ASTNode :" + n.toString());
     return n;
@@ -98,10 +112,6 @@ public final class SqlXlateUtil {
    */
   public static ASTNode newASTNode(ASTNode other) {
     return newASTNode(other.getToken());
-  }
-
-  public static SqlASTNode newSqlASTNode(SqlASTNode src) {
-    return new SqlASTNode(new CommonToken(src.getToken()));
   }
 
   /**
@@ -526,63 +536,6 @@ public final class SqlXlateUtil {
   }
 
   /**
-   * Duplicate subtree for Hive AST
-   *
-   * @param src
-   * @return
-   */
-  public static ASTNode duplicateSubTree(ASTNode src) {
-    ASTNode newNode = SqlXlateUtil.newASTNode(src);
-    for (int i = 0; i < src.getChildCount(); i++) {
-      newNode.addChild(duplicateSubTree((ASTNode) src.getChild(i)));
-    }
-    return newNode;
-  }
-
-  /**
-   * Duplicate subtree for SqlAST
-   *
-   * @param src
-   * @return
-   */
-  public static SqlASTNode duplicateSubTree(SqlASTNode src) {
-    SqlASTNode newNode = SqlXlateUtil.newSqlASTNode(src);
-    for (int i = 0; i < src.getChildCount(); i++) {
-      newNode.addChild(duplicateSubTree((SqlASTNode) src.getChild(i)));
-    }
-    return newNode;
-  }
-
-  /**
-   * Make Table Ref AST piece based on column
-   *
-   * @param c
-   * @return
-   */
-  public static ASTNode makeASTforColumn(Column c) {
-    return makeASTforColumn(c.getTblAlias(), c.getColAlias());
-  }
-
-  /**
-   * Make Table Ref AST piece based on table alias and column alias
-   *
-   * @param c
-   * @return
-   */
-  public static ASTNode makeASTforColumn(String tabAlias, String colAlias) {
-    ASTNode item = SqlXlateUtil.newASTNode(HiveParser.TOK_TABLE_OR_COL, "TOK_TABLE_OR_COL");
-
-    if (!tabAlias.isEmpty()) {
-      ASTNode dot = SqlXlateUtil.newASTNode(HiveParser.DOT, ".");
-      dot.addChild(item);
-      item.addChild(SqlXlateUtil.newASTNode(HiveParser.Identifier, tabAlias));
-      item = dot;
-    }
-    item.addChild(SqlXlateUtil.newASTNode(HiveParser.Identifier, colAlias));
-    return item;
-  }
-
-  /**
    *
    * Class to generate random alias for subquries and columns.
    *
@@ -605,18 +558,7 @@ public final class SqlXlateUtil {
      * @return
      */
     private String generateSequenceAlias() {
-      return "panthera_" + getAliasNum();
-    }
-
-    /**
-     * Generate alias with random string
-     *
-     * @return
-     */
-    private String generateRandomAlias() {
-      // TODO generate random string now
-      // later we will check for conflicts
-      return "gen_" + RandomStringUtils.randomAlphanumeric(12);
+      return PantheraConstants.PANTHERA_PREFIX + getAliasNum();
     }
 
     private synchronized int getAliasNum() {
@@ -775,7 +717,9 @@ public final class SqlXlateUtil {
       RowResolver rr = new RowResolver();
       try {
         if (tab.isView()) {
-          List<FieldSchema> fields = tab.getAllCols();
+          List<FieldSchema> fields = new ArrayList<FieldSchema>();
+          fields.addAll(tab.getCols());
+          fields.addAll(tab.getPartCols());
           for (int i = 0; i < fields.size(); i++) {
             // add fields into row resolver
             // TODO in colInfo we now only add table name as tab alias,
@@ -907,8 +851,39 @@ public final class SqlXlateUtil {
     return -1;
   }
 
-  // check whether the query is panthera supported.
-  // Panthera can support SELECT Statement, EXPLAIN PLAN FOR SELECT Statement, INSERT INTO <table> SELECT Statement.
+  /**
+   * find table reference way
+   * @param child
+   * @return
+   * if there's alias, return alias name, else must be direct mode, return table name
+   * @throws SqlXlateException
+   */
+  public static String findTableReferenceName(CommonTree child) throws SqlXlateException {
+    if (child.getChildCount() == 2) {
+      // have alias originally
+      assert(child.getChild(0).getType() == PantheraParser_PLSQLParser.ALIAS);
+      return child.getChild(0).getChild(0).getText();
+    } else {
+      if (child.getChild(0).getType() == PantheraParser_PLSQLParser.TABLE_REF) {
+        // TODO not support child's child is TABLE_REF
+        throw new SqlXlateException(child, "not support join with a table join on right here!");
+      }
+      CommonTree mode = (CommonTree) child.getChild(0).getChild(0);
+      if (!mode.getText().equals("DIRECT_MODE")) {
+        throw new SqlXlateException(child, "missing table alias for temp table!");
+      }
+      return mode.getChild(0).getChild(0).getText();
+    }
+  }
+
+  /**
+   * check whether the query is panthera supported. <br>
+   * Panthera can support SELECT Statement, EXPLAIN PLAN FOR SELECT Statement, INSERT INTO table SELECT Statement.
+   *
+   * @param tree
+   * @throws HiveParseException
+   */
+  //
   public static void checkPantheraSupportQueries(Object tree) throws HiveParseException {
     if (!((((CommonTree)tree).getType() ==  PantheraParser_PLSQLParser.STATEMENTS)
         && (((CommonTree)tree).getChild(0).getType() == PantheraParser_PLSQLParser.SELECT_STATEMENT)
@@ -923,5 +898,20 @@ public final class SqlXlateUtil {
         && (((CommonTree)tree).getChild(0).getChild(0).getChild(1).getType() == PantheraParser_PLSQLParser.SELECT_STATEMENT))){
       throw new HiveParseException("Illegal queries for Panthera");
     }
+  }
+
+  /**
+   * build tree line and charposition recursively as params<br>
+   *
+   * @param tree
+   * @param line
+   * @param charPositionInLine
+   */
+  public static void buildPosition(CommonTree tree, int line, int charPositionInLine) {
+    for (int i = 0; i < tree.getChildCount(); i++) {
+      buildPosition((CommonTree) tree.getChild(i), line, charPositionInLine);
+    }
+    tree.token.setCharPositionInLine(charPositionInLine);
+    tree.token.setLine(line);
   }
 }

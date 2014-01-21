@@ -17,3 +17,5 @@ ql/derby.log
 derby.log
 .arc
 ql/TempStatsStore
+datanucleus.log
+TempStatsStore

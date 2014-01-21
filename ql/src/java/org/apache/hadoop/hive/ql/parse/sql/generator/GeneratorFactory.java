@@ -175,11 +175,19 @@ public class GeneratorFactory {
     genMap.put(PantheraParser_PLSQLParser.NATIVE_DATATYPE, new NothingGenerator());
     genMap.put(PantheraParser_PLSQLParser.INT_VK, new IntGenerator());
     genMap.put(PantheraParser_PLSQLParser.CHAR_VK, new CharGenerator());
+    genMap.put(PantheraParser_PLSQLParser.STRING_VK, new StringGenerator());
+    genMap.put(PantheraParser_PLSQLParser.BOOLEAN_VK, new BooleanGenerator());
+    genMap.put(PantheraParser_PLSQLParser.DOUBLE_VK, new DoubleGenerator());
+    genMap.put(PantheraParser_PLSQLParser.FLOAT_VK, new FloatGenerator());
     genMap.put(PantheraParser_PLSQLParser.PRECISION, new PrecisionGenerator());
     genMap.put(PantheraParser_PLSQLParser.DECIMAL_VK, new DecimalGenerator());
     genMap.put(PantheraParser_PLSQLParser.DEC_VK, new DecimalGenerator());
+    genMap.put(PantheraParser_PLSQLParser.TIMESTAMP_VK, new TimestampVkGenerator());
+    genMap.put(PantheraParser_PLSQLParser.SMALLINT_VK, new SmallIntGenerator());
 
     genMap.put(PantheraParser_PLSQLParser.CONCATENATION_OP, new ConcatenationOpGenerator());
+    genMap.put(PantheraParser_PLSQLParser.CUSTOM_TYPE, new NothingGenerator());
+    genMap.put(PantheraParser_PLSQLParser.TYPE_NAME, new TypeNameGenerator());
   }
 
   static {

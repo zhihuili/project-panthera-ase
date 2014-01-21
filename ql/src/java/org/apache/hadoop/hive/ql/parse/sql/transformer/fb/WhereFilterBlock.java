@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.hive.ql.parse.sql.PantheraConstants;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
@@ -186,7 +187,7 @@ public class WhereFilterBlock extends TypeFilterBlock {
       }
     }
 
-    // after insert count(*), give alias "panthera_aggregation" to all standard function
+    // after insert count(*), give aliases begin with PantheraConstants.PANTHERA_AGGR to all standard function
     for (int i = 0; i < selectList.getChildCount(); i++) {
       CommonTree selectItem = (CommonTree) selectList.getChild(i);
       if (FilterBlockUtil.findOnlyNode(selectItem, PantheraParser_PLSQLParser.STANDARD_FUNCTION) == null) {
@@ -194,10 +195,11 @@ public class WhereFilterBlock extends TypeFilterBlock {
       }
       CommonTree rebuildAlias = (CommonTree) selectItem.getChild(1);
       if (rebuildAlias != null) {
-        ((CommonTree) rebuildAlias.getChild(0)).getToken().setText("panthera_aggregation_" + i);
+        ((CommonTree) rebuildAlias.getChild(0)).getToken().setText(PantheraConstants.PANTHERA_AGGR + i);
       } else {
         rebuildAlias = FilterBlockUtil.createSqlASTNode(selectItem, PantheraParser_PLSQLParser.ALIAS, "ALIAS");
-        CommonTree rebuildID = FilterBlockUtil.createSqlASTNode(rebuildAlias, PantheraParser_PLSQLParser.ID, "panthera_aggregation_" + i);
+        CommonTree rebuildID = FilterBlockUtil.createSqlASTNode(rebuildAlias, PantheraParser_PLSQLParser.ID,
+            PantheraConstants.PANTHERA_AGGR + i);
         rebuildAlias.addChild(rebuildID);
         selectItem.addChild(rebuildAlias);
       }

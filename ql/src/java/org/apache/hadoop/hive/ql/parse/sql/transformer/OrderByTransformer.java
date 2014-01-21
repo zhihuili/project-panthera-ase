@@ -20,6 +20,7 @@ package org.apache.hadoop.hive.ql.parse.sql.transformer;
 import java.util.List;
 
 import org.antlr.runtime.tree.CommonTree;
+import org.apache.hadoop.hive.ql.parse.sql.PantheraConstants;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
@@ -48,7 +49,6 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  //FIXME if order by something neither a function nor a select-item
   private void transformOrderBy(QueryInfo qf, TranslateContext context) throws SqlXlateException {
     CommonTree select = qf.getSelectKeyForThisQ();
     CommonTree selectStatement = (CommonTree) select.getParent().getParent();
@@ -92,7 +92,7 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
               // FIXME It should change output column name of result set.
               alias = FilterBlockUtil.createSqlASTNode(item, PantheraParser_PLSQLParser.ALIAS, "ALIAS");
               CommonTree aliasName = FilterBlockUtil.createSqlASTNode(
-                  item, PantheraParser_PLSQLParser.ID, "panthera_col_" + seq);
+                  item, PantheraParser_PLSQLParser.ID, PantheraConstants.PANTHERA_COL + seq);
               alias.addChild(aliasName);
               item.addChild(alias);
             }
@@ -121,11 +121,11 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
             } else {//select-list
               boolean flag = false;
               for (int j=0; j< selectList.getChildCount();j++){
-                if(isEqualByText((CommonTree) selectList.getChild(j).getChild(0).getChild(0),ct)) {
+                if(FilterBlockUtil.equalsTree((CommonTree) selectList.getChild(j).getChild(0).getChild(0),ct)) {
                   CommonTree colAlias = FilterBlockUtil.createSqlASTNode(
                       (CommonTree) selectList.getChild(j), PantheraParser_PLSQLParser.ALIAS, "ALIAS");
                   CommonTree colAliasName = FilterBlockUtil.createSqlASTNode(
-                      colAlias, PantheraParser_PLSQLParser.ID, "panthera_col_" + j);
+                      colAlias, PantheraParser_PLSQLParser.ID, PantheraConstants.PANTHERA_COL + j);
                   colAlias.addChild(colAliasName);
                   selectList.getChild(j).addChild(colAlias);
                   CommonTree aliasId = FilterBlockUtil.createSqlASTNode(
@@ -135,6 +135,7 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
                   break;
                 }
                 if(isContainedByText((CommonTree) selectList.getChild(j).getChild(0).getChild(0),ct)) {
+                  // tables from  table.* in select list and table.column in order by clause are the same.
                   flag = true;
                   break;
                 }
@@ -155,6 +156,7 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
     }
   }
 
+  // for table.* in select list.
   private boolean isContainedByText(CommonTree tree1, CommonTree tree2) {
     if(tree1.getParent().getType() == PantheraParser_PLSQLParser.EXPR
         &&tree1.getType() == PantheraParser_PLSQLParser.DOT_ASTERISK
@@ -163,25 +165,6 @@ public class OrderByTransformer extends BaseSqlASTTransformer {
       return true;
     } else {
       return false;
-    }
-  }
-
-  private boolean isEqualByText(CommonTree tree1, CommonTree tree2) {
-    if(!tree1.getText().equals(tree2.getText())){
-      return false;
-    } else {
-       if(tree1.getChildCount() == 0 && tree2.getChildCount() == 0) {
-         return true;
-       }
-       if(tree1.getChildCount() != tree2.getChildCount()) {
-         return false;
-       }
-       for(int i=0; i<tree1.getChildCount();i++){
-         if(!isEqualByText((CommonTree) tree1.getChild(i),(CommonTree) tree2.getChild(i))) {
-           return false;
-         }
-       }
-       return true;
     }
   }
 }

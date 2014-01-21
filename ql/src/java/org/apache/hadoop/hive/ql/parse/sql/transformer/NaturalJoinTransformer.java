@@ -20,25 +20,30 @@ package org.apache.hadoop.hive.ql.parse.sql.transformer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.Stack;
 
 import org.antlr.runtime.tree.CommonTree;
-import org.apache.hadoop.hive.ql.exec.ColumnInfo;
-import org.apache.hadoop.hive.ql.parse.RowResolver;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
+import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
+
 /**
  * transform<br>
+ * natural join<br>
  * natural left join<br>
  * natural inner join<br>
  * natural right join<br>
+ * natural full join<br>
  * to<br>
  * simple join<br>
  * NaturalJoinTransformer.
@@ -64,102 +69,204 @@ public class NaturalJoinTransformer extends BaseSqlASTTransformer {
       CommonTree child = (CommonTree) node.getChild(i);
       trans(child, context);
     }
+    // TODO join can also be 2,3,... child of table_ref, should support more than 2 tables
     if (node.getType() == PantheraExpParser.TABLE_REF && node.getChildCount() > 1
         && node.getChild(1).getType() == PantheraExpParser.JOIN_DEF
         && node.getChild(1).getChild(0).getType() == PantheraExpParser.NATURAL_VK) {
       Map<String, Set<String>> columnSetMap = processNaturalJoin(node, context);
-      CommonTree select = (CommonTree) node.getParent().getParent();
-      rebuildSelect((CommonTree) select.getFirstChildWithType(PantheraExpParser.SELECT_LIST),
-          columnSetMap);
-      rebuildColumn((CommonTree) select
-          .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_WHERE), columnSetMap);
-      if (select.getFirstChildWithType(PantheraExpParser.SELECT_LIST) == null) {
-        rebuildColumn((CommonTree) ((CommonTree) (select.getParent().getParent()))
-            .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_ORDER), columnSetMap);
+      // take INNER as LEFT, because when INNER join on left & right equal, neither cannot be null.
+      int joinType = PantheraParser_PLSQLParser.LEFT_VK;
+      if (node.getChild(1).getChild(0).getType() == PantheraParser_PLSQLParser.RIGHT_VK
+          || node.getChild(1).getChild(0).getType() == PantheraParser_PLSQLParser.FULL_VK) {
+        joinType = node.getChild(1).getChild(0).getType();
       }
+      // parent of table_ref can also be table_ref_element
+      CommonTree select = (CommonTree) node.getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
+      Map<String, CommonTree> commonMap = rebuildSelect(select, columnSetMap, joinType);
+      FilterBlockUtil.rebuildColumn((CommonTree) select
+          .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_WHERE), commonMap);
+      FilterBlockUtil.rebuildColumn((CommonTree) select
+          .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_GROUP), commonMap);
+      FilterBlockUtil.deleteAllTableAlias((CommonTree) ((CommonTree) (select.getParent().getParent()))
+          .getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_ORDER));
     }
   }
 
-  private void rebuildColumn(CommonTree where, Map<String, Set<String>> columnSetMap) {
-    if (where == null) {
-      return;
-    }
-    List<CommonTree> nodeList = new ArrayList<CommonTree>();
-    FilterBlockUtil.findNode(where, PantheraExpParser.ANY_ELEMENT, nodeList);
-    for (CommonTree anyElement : nodeList) {
-      rebuildAnyElement(anyElement, columnSetMap);
-    }
-  }
-
-  private void rebuildSelect(CommonTree selectList, Map<String, Set<String>> columnSetMap) {
-    if (selectList == null || selectList.getType() != PantheraExpParser.SELECT_LIST) {
-      return;
+  /**
+   *
+   * 1. expand select * if exists, omit dup col, use common colname as alias.<br>
+   * 2. replace table alias in select-list
+   * 3. replace upper order by x.a with order by a
+   * 4. replace filters of a to x.a
+   *
+   * @param select
+   * @param columnSetMap
+   * @param joinType
+   * @return commonMap
+   */
+  private Map<String, CommonTree> rebuildSelect(CommonTree select, Map<String, Set<String>> columnSetMap, int joinType) {
+    CommonTree selectList = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.SELECT_LIST);
+    CommonTree asterisk = (CommonTree) select.getFirstChildWithType(PantheraParser_PLSQLParser.ASTERISK);
+    CommonTree newSelectList = FilterBlockUtil.createSqlASTNode(asterisk != null ? asterisk : selectList, PantheraParser_PLSQLParser.SELECT_LIST, "SELECT_LIST");
+    Map<String, CommonTree> commonMap = rebuildAsterisk(newSelectList, columnSetMap, joinType);
+    if (asterisk != null) {
+      if (selectList == null) {
+        assert(asterisk.childIndex == 1);
+        select.replaceChildren(asterisk.childIndex, asterisk.childIndex, newSelectList);
+        selectList = newSelectList;
+      } else if (asterisk.childIndex == 2) {
+        for (int i = 0; i < newSelectList.getChildCount(); i++) {
+          selectList.addChild(newSelectList.getChild(i));
+        }
+      } else {
+        for (int i = 0; i < newSelectList.getChildCount(); i++) {
+          SqlXlateUtil.addCommonTreeChild(selectList, i, (CommonTree) newSelectList.getChild(i));
+        }
+      }
     }
     for (int i = 0; i < selectList.getChildCount(); i++) {
       CommonTree selectItem = (CommonTree) selectList.getChild(i);
-      CommonTree anyElement = FilterBlockUtil.findOnlyNode(selectItem,
-          PantheraExpParser.ANY_ELEMENT);
-      rebuildAnyElement(anyElement, columnSetMap);
+      List<CommonTree> anyList = new ArrayList<CommonTree>();
+      FilterBlockUtil.findNode(selectItem, PantheraExpParser.ANY_ELEMENT, anyList);
+      if (anyList.size() == 0) {
+        continue;
+      }
+      for (CommonTree anyElement : anyList) {
+        String colname = anyElement.getChild(anyElement.getChildCount() - 1).getText();
+        if (selectItem.getChildCount() == 1
+            && selectItem.getChild(0).getChild(0).getType() == PantheraParser_PLSQLParser.CASCATED_ELEMENT
+            && selectItem.getChild(0).getChild(0).getChild(0) == anyElement) {
+          // if no alias user defined, rewrite it as col name to ensure dup col be deleted.
+          selectItem.addChild(FilterBlockUtil.createAlias(selectItem, colname));
+        }
+        FilterBlockUtil.rebuildColumn(anyElement, commonMap);
+      }
     }
+    return commonMap;
   }
 
-  private void rebuildAnyElement(CommonTree anyElement, Map<String, Set<String>> columnSetMap) {
-    if (anyElement != null) {
-      if (anyElement.getChildCount() == 1) {
-        String column = anyElement.getChild(0).getText();
-        String tableAlias = findTableAlias(column, columnSetMap);
-        if (tableAlias != null) {
-          anyElement.addChild(FilterBlockUtil.createSqlASTNode(
-              (CommonTree) anyElement.getChild(0),PantheraExpParser.ID, tableAlias));
-          SqlXlateUtil.exchangeChildrenPosition(anyElement);
+  private Map<String, CommonTree> rebuildAsterisk(CommonTree selectList, Map<String, Set<String>> columnSetMap,
+      int joinType) {
+    Iterator<Entry<String, Set<String>>> it = columnSetMap.entrySet().iterator();
+    Set<String> set = new HashSet<String>();
+    Map<String, CommonTree> index = new HashMap<String, CommonTree>();
+    Map<String, CommonTree> commonMap = new HashMap<String, CommonTree>();
+    Stack<Entry<String, Set<String>>> entries = new Stack<Entry<String, Set<String>>>();
+    int commonCount = 0;
+    while (it.hasNext()) {
+      entries.push(it.next());
+    }
+    // use stack to first do right table and then left table
+    while (entries.size() > 0) {
+      Entry<String, Set<String>> entry = entries.pop();
+      String table = entry.getKey();
+      Set<String> val = entry.getValue();
+      Iterator<String> colIter = val.iterator();
+      int independentCount = commonCount;
+      while (colIter.hasNext()) {
+        String col = colIter.next();
+        CommonTree cascated = FilterBlockUtil.createCascatedElementBranch(selectList, table, col);
+        CommonTree expr = FilterBlockUtil.createSqlASTNode(cascated, PantheraParser_PLSQLParser.EXPR, "EXPR");
+        expr.addChild(cascated);
+        CommonTree alias = FilterBlockUtil.createAlias(cascated, col);
+        CommonTree selectItem = FilterBlockUtil.createSqlASTNode(expr, PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
+        selectItem.addChild(expr);
+        selectItem.addChild(alias);
+        if (set.contains(col)) {
+          // this is a shared column, put it at first of selectList
+          CommonTree existSelectItem = index.get(col);
+          // here in the same table will not have two cols with same colname
+          // TODO need check
+          existSelectItem.getParent().deleteChild(existSelectItem.getChildIndex());
+          if (commonMap.get(col) != null) {
+            commonCount--;
+            independentCount--;
+          }
+          if (joinType == PantheraParser_PLSQLParser.LEFT_VK) {
+            SqlXlateUtil.addCommonTreeChild(selectList, commonCount++, selectItem);
+            commonMap.put(col, selectItem);
+          } else if (joinType == PantheraParser_PLSQLParser.RIGHT_VK) {
+            SqlXlateUtil.addCommonTreeChild(selectList, commonCount++, existSelectItem);
+            commonMap.put(col, existSelectItem);
+          } else {
+            // natural full outer join
+            // (case when t1.a is null then t2.a else t1.a end)
+            CommonTree compositeSelectItem = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.SELECT_ITEM, "SELECT_ITEM");
+            CommonTree compositeExpr = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.EXPR, "EXPR");
+            compositeSelectItem.addChild(compositeExpr);
+            compositeSelectItem.addChild((CommonTree) selectItem.deleteChild(1));
+            CommonTree search = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.SEARCHED_CASE, "case");
+            compositeExpr.addChild(search);
+            CommonTree tokenWhen = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.SQL92_RESERVED_WHEN, "when");
+            CommonTree tokenElse = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.SQL92_RESERVED_ELSE, "else");
+            search.addChild(tokenWhen);
+            search.addChild(tokenElse);
+            CommonTree logicExpr = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.LOGIC_EXPR, "LOGIC_EXPR");
+            tokenWhen.addChild(logicExpr);
+            CommonTree isNull = FilterBlockUtil.createSqlASTNode(selectList, PantheraParser_PLSQLParser.IS_NULL, "IS_NULL");
+            logicExpr.addChild(isNull);
+            isNull.addChild(FilterBlockUtil.cloneTree((CommonTree) selectItem.getChild(0).getChild(0)));
+            tokenElse.addChild((CommonTree) selectItem.deleteChild(0));
+            tokenWhen.addChild((CommonTree) existSelectItem.deleteChild(0));
+            SqlXlateUtil.addCommonTreeChild(selectList, commonCount++, compositeSelectItem);
+            commonMap.put(col, compositeSelectItem);
+          }
+          independentCount++;
+        } else {
+          SqlXlateUtil.addCommonTreeChild(selectList, independentCount++, selectItem);
+          set.add(col);
+          index.put(col, selectItem);
         }
       }
-      if (anyElement.getChildCount() == 2) {
-        String column = anyElement.getChild(1).getText();
-        String tableAlias = findTableAlias(column, columnSetMap);
-        if (tableAlias != null) {
-          ((CommonTree) anyElement.getChild(0)).getToken().setText(tableAlias);
-        }
-      }
     }
+    return commonMap;
   }
 
-  private String findTableAlias(String column, Map<String, Set<String>> columnSetMap) {
-    for (Entry<String, Set<String>> entry : columnSetMap.entrySet()) {
-      Set<String> columnSet = entry.getValue();
-      if (columnSet.contains(column)) {
-        return entry.getKey();
-      }
-    }
-    return null;
-  }
-
+  /**
+   * change natural join to equijoin
+   *
+   * @param node
+   * @param context
+   * @return return a map for sets of all table_ref_element, key is table alias,
+   * val is a set for all cols.
+   * @throws SqlXlateException
+   */
   private Map<String, Set<String>> processNaturalJoin(CommonTree node, TranslateContext context)
       throws SqlXlateException {
-    Map<String, Set<String>> columnSetMap = new HashMap<String, Set<String>>();
+    Map<String, Set<String>> columnSetMap = new LinkedHashMap<String, Set<String>>();
     for (int i = 0; i < node.getChildCount(); i++) {
       CommonTree child = (CommonTree) node.getChild(i);
       if (child.getType() == PantheraExpParser.TABLE_REF_ELEMENT) {
-        columnSetMap.put(FilterBlockUtil.addTableAlias(child, context),
-            getColumnSet(child, context));
+        String leftTable = SqlXlateUtil.findTableReferenceName(child);
+        columnSetMap.put(leftTable, FilterBlockUtil.getColumnSet(child, context));
       }
       if (child.getType() == PantheraExpParser.JOIN_DEF
           && child.getChild(0).getType() == PantheraExpParser.NATURAL_VK) {
-        processNaturalNode(child);
+        // change join type
+        CommonTree natural = processNaturalNode(child);
         CommonTree tableRefElement = (CommonTree) child
             .getFirstChildWithType(PantheraExpParser.TABLE_REF_ELEMENT);
-        String alias = FilterBlockUtil.addTableAlias(tableRefElement, context);
-        Set<String> columnSet = getColumnSet(tableRefElement, context);
-        makeOn((CommonTree) node.getChild(1), alias, child, columnSet, columnSetMap);
+        String alias = SqlXlateUtil.findTableReferenceName(tableRefElement);
+        Set<String> columnSet = FilterBlockUtil.getColumnSet(tableRefElement, context);
+        makeOn(natural, alias, child, columnSet, columnSetMap);
         columnSetMap.put(alias, columnSet);
       }
     }
     return columnSetMap;
   }
 
-  private void makeOn(CommonTree njoin,String thisTable, CommonTree join, Set<String> thisColumnSet,
+  /**
+   * make equijoin condition
+   *
+   * @param njoin
+   * @param thisTable
+   * @param join
+   * @param thisColumnSet
+   * @param columnSetMap
+   */
+  private void makeOn(CommonTree natural, String thisTable, CommonTree join, Set<String> thisColumnSet,
       Map<String, Set<String>> columnSetMap) {
-    CommonTree on = FilterBlockUtil.createSqlASTNode((CommonTree) njoin.getChild(0),
+    CommonTree on = FilterBlockUtil.createSqlASTNode(natural,
         PantheraExpParser.SQL92_RESERVED_ON, "on");//njoin.getChild(0) is natural_vk
     CommonTree logicExpr = FilterBlockUtil.createSqlASTNode(on, PantheraExpParser.LOGIC_EXPR,
         "LOGIC_EXPR");
@@ -171,17 +278,8 @@ public class NaturalJoinTransformer extends BaseSqlASTTransformer {
         String tableAlias = entry.getKey();
         if (preColumnSet.contains(column)) {
           hasCondition = true;
-          CommonTree equal = makeEqualCondition(on, thisTable, tableAlias, column);
-          if (logicExpr.getChildCount() == 0) {
-            logicExpr.addChild(equal);
-          } else {
-            CommonTree and = FilterBlockUtil.createSqlASTNode(on, PantheraExpParser.SQL92_RESERVED_AND,
-                "and");
-            CommonTree leftChild = (CommonTree) logicExpr.deleteChild(0);
-            and.addChild(leftChild);
-            and.addChild(equal);
-            logicExpr.addChild(and);
-          }
+          CommonTree equal = FilterBlockUtil.makeEqualCondition(on, thisTable, tableAlias, column, column);
+          FilterBlockUtil.addConditionToLogicExpr(logicExpr, equal);
           break;
         }
       }
@@ -191,48 +289,20 @@ public class NaturalJoinTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  private CommonTree makeEqualCondition(CommonTree on, String leftTable, String rightTable, String column) {
-    CommonTree equal = FilterBlockUtil.createSqlASTNode(on, PantheraExpParser.EQUALS_OP, "=");
-    equal.addChild(FilterBlockUtil.createCascatedElementBranch(equal, leftTable, column));
-    equal.addChild(FilterBlockUtil.createCascatedElementBranch(equal, rightTable, column));
-    return equal;
-
-  }
-
-  private void processNaturalNode(CommonTree join) {
+  /**
+   * build columnSetMap and delete INNER node
+   *
+   * @param join
+   * @return natural join node
+   */
+  private CommonTree processNaturalNode(CommonTree join) {
     // delete NATURAL node
-    join.deleteChild(0);
+    CommonTree natural = (CommonTree) join.deleteChild(0);
     if (join.getChild(0).getType() == PantheraExpParser.INNER_VK) {
       // delete INNER node
       join.deleteChild(0);
     }
+    return natural;
   }
 
-  private Set<String> getColumnSet(CommonTree tableRefElement, TranslateContext context)
-      throws SqlXlateException {
-    Set<String> result = new HashSet<String>();
-    CommonTree tableViewName = FilterBlockUtil.findOnlyNode(tableRefElement,
-        PantheraExpParser.TABLEVIEW_NAME);
-    if (tableViewName != null) {
-      RowResolver rr = null;
-      if (tableViewName.getChildCount() == 1) {
-        try{
-        rr = context.getMeta().getRRForTbl(tableViewName.getChild(0).getText());
-        } catch (SqlXlateException e) {
-          throw new SqlXlateException((CommonTree) tableViewName.getChild(0), "HiveException thrown : " + e);
-        }
-      }
-      if (tableViewName.getChildCount() == 2) {
-        rr = context.getMeta().getRRForTbl(tableViewName.getChild(0).getText(),
-            tableViewName.getChild(1).getText());
-      }
-      if (rr == null) {
-        throw new SqlXlateException((CommonTree) tableViewName.getChild(0),"unknow table name!");
-      }
-      for (ColumnInfo ci : rr.getColumnInfos()) {
-        result.add(ci.getInternalName());
-      }
-    }
-    return result;
-  }
 }

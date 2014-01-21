@@ -27,7 +27,6 @@ import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
 import org.apache.hadoop.hive.ql.parse.sql.SqlXlateUtil;
 import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
-import org.apache.hadoop.hive.ql.parse.sql.transformer.QueryInfo.Column;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
@@ -66,21 +65,6 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
       transformFilterInward((CommonTree) (tree.getChild(i)), context);
     }
 
-    // if tree is a filter, need to check if count(*) at right.
-    switch (tree.getType()) {
-    case PantheraParser_PLSQLParser.EQUALS_OP:
-    case PantheraExpParser.EQUALS_NS:
-    case PantheraParser_PLSQLParser.NOT_EQUAL_OP:
-    case PantheraParser_PLSQLParser.GREATER_THAN_OP:
-    case PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP:
-    case PantheraParser_PLSQLParser.LESS_THAN_OP:
-    case PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP:
-      needExchange(tree);
-      break;
-    default:
-      break;
-    }
-
     if (PantheraExpParser.LEFTSEMI_STR.equals(tree.getText())) {
       // TODO the method can only handle one condition:
       // in outer where conditions with "or" node, the columns in the "or" branch must
@@ -88,57 +72,6 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
       processLeftSemiJoin(context, (CommonTree) tree.getParent());
     }
 
-  }
-
-  /**
-   * change the tree's 2 children if the right tree contains count(*) but left not contains.
-   *
-   * @param tree
-   * @return
-   */
-  private boolean needExchange(CommonTree tree){
-    if (tree.getChildCount() == 2) {
-      // for count(*) at right hand of operator
-      CommonTree sf = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.STANDARD_FUNCTION, "STANDARD_FUNCTION");
-      CommonTree cnt = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.COUNT_VK, "count");
-      CommonTree ast = FilterBlockUtil.createSqlASTNode(tree, PantheraParser_PLSQLParser.ASTERISK, "*");
-      sf.addChild(cnt);
-      cnt.addChild(ast);
-      List<CommonTree> funcList = new ArrayList<CommonTree>();
-      FilterBlockUtil.findSubTree((CommonTree) tree.getChild(1), sf, funcList);
-      if (funcList.size() > 0) {
-        // right hand of operator contains count(*)
-        List<CommonTree> leftFuncList = new ArrayList<CommonTree>();
-        FilterBlockUtil.findSubTree((CommonTree) tree.getChild(0), sf, leftFuncList);
-        if (leftFuncList.isEmpty()) {
-          // left does not contain
-          // exchange count(*) to left
-          SqlXlateUtil.exchangeChildrenPosition(tree);
-          switch (tree.getType()) {
-          case PantheraParser_PLSQLParser.GREATER_THAN_OP:
-            tree.getToken().setText("<");
-            tree.getToken().setType(PantheraParser_PLSQLParser.LESS_THAN_OP);
-            break;
-          case PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP:
-            tree.getToken().setText("<=");
-            tree.getToken().setType(PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP);
-            break;
-          case PantheraParser_PLSQLParser.LESS_THAN_OP:
-            tree.getToken().setText(">");
-            tree.getToken().setType(PantheraParser_PLSQLParser.GREATER_THAN_OP);
-            break;
-          case PantheraParser_PLSQLParser.LESS_THAN_OR_EQUALS_OP:
-            tree.getToken().setText(">=");
-            tree.getToken().setType(PantheraParser_PLSQLParser.GREATER_THAN_OR_EQUALS_OP);
-            break;
-          default:
-            break;
-          }
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   private void processLeftSemiJoin(TranslateContext context, CommonTree join)
@@ -150,12 +83,19 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
         .getFirstChildWithType(PantheraExpParser.SELECT_LIST);
     CommonTree on = (CommonTree) join.getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_ON);
 
-    CommonTree bottomWhere = FilterBlockUtil.createSqlASTNode(join, PantheraExpParser.SQL92_RESERVED_WHERE,
-        "where");
-    CommonTree bottomWhereLogic = FilterBlockUtil.createSqlASTNode(join, PantheraExpParser.LOGIC_EXPR, "LOGIC_EXPR");
-    bottomWhere.addChild(bottomWhereLogic);
-    bottomSelect.addChild(bottomWhere);
-    assert (bottomSelectList != null && bottomTableAlias != null);
+    CommonTree bottomWhere = (CommonTree) bottomSelect.getFirstChildWithType(PantheraExpParser.SQL92_RESERVED_WHERE);
+    CommonTree bottomWhereLogic = null;
+    if (bottomWhere == null) {
+      bottomWhere = FilterBlockUtil.createSqlASTNode(join, PantheraExpParser.SQL92_RESERVED_WHERE,
+          "where");
+      bottomWhereLogic = FilterBlockUtil.createSqlASTNode(join,
+          PantheraExpParser.LOGIC_EXPR, "LOGIC_EXPR");
+      bottomWhere.addChild(bottomWhereLogic);
+      // where is the third node under SELECT node, FROM and SELECT LIST is the first two node.
+      SqlXlateUtil.addCommonTreeChild(bottomSelect, 2, bottomWhere);
+    }
+    bottomWhereLogic = (CommonTree) bottomWhere.getChild(0);
+    assert (bottomTableAlias != null);
 
     if (on != null) {
       // process join (on) branch
@@ -171,23 +111,19 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
           continue;
         }
         CommonTree op = (CommonTree) bottomKeys.get(0).getParent();
-        // uncorrelated condition,transfer it to WHERE condition and remove it from SELECT_ITEM
+        // uncorrelated condition,transfer it to WHERE condition
         if (bottomKeys != null && topKeys == null) {
           FilterBlockUtil.deleteTheNode(op);
-          if (bottomWhereLogic.getChildCount() > 0) {
-            CommonTree and = FilterBlockUtil
-                .createSqlASTNode(join, PantheraExpParser.SQL92_RESERVED_AND, "and");
-            and.addChild((CommonTree) bottomWhereLogic.deleteChild(0));
-            and.addChild(op);
-            bottomWhereLogic.addChild(and);
-          } else {
-            bottomWhereLogic.addChild(op);
-          }
+          FilterBlockUtil.addConditionToLogicExpr(bottomWhereLogic, op);
           for (CommonTree bottomkey : bottomKeys) {
             CommonTree anyElement = (CommonTree) bottomkey.getChild(0);
+            // remove table node
             anyElement.deleteChild(0);
             CommonTree column = (CommonTree) anyElement.getChild(0);
             String columnAlias = column.getText();
+            if (bottomSelectList == null) {
+              continue;
+            }
             for (int j = 0; j < bottomSelectList.getChildCount(); j++) {
               CommonTree selectItem = (CommonTree) bottomSelectList.getChild(j);
               String selectColumn = selectItem.getChild(0).getChild(0).getChild(0).getChild(0)
@@ -198,14 +134,18 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
               }
               if (selectAlias.equals(columnAlias)) {
                 column.getToken().setText(selectColumn);
-                bottomSelectList.deleteChild(j);
                 break;
               }
             }
           }
         }
       }
+      // on node might have no child after the filter inward operation.
+      if (on.getChildCount() == 0) {
+        on.getParent().deleteChild(on.getChildIndex());
+      }
     }
+
 
     // process where branch under closing select, inward the "or" branch
     CommonTree closingSelect = (CommonTree) join
@@ -217,15 +157,7 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
       getWhereFilter(context, (CommonTree)closingWhere.getChild(0).getChild(0), filterMap);
       if (filterMap.get(bottomTableAlias) != null) {
         for (CommonTree orNode : filterMap.get(bottomTableAlias)) {
-          if (bottomWhereLogic.getChildCount() > 0) {
-            CommonTree and = FilterBlockUtil
-                .createSqlASTNode(join, PantheraExpParser.SQL92_RESERVED_AND, "and");
-            and.addChild((CommonTree)bottomWhereLogic.deleteChild(0));
-            and.addChild(orNode);
-            bottomWhereLogic.addChild(and);
-          } else {
-            bottomWhereLogic.addChild(orNode);
-          }
+          FilterBlockUtil.addConditionToLogicExpr(bottomWhereLogic, orNode);
         }
         Map<String, String> columnAliasMap = getColumnAliasMap((CommonTree)bottomWhere
             .getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT));
@@ -323,14 +255,15 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
         qf = tmpQf;
       }
     }
+    // qf should not be null since this transformer is after SubQUnnestTransformer.
     assert (qf != null);
     if (!anyElements.isEmpty()) {
-      String tableName = getTableName(qf, anyElements.get(0));
+      String tableName = FilterBlockUtil.getTableName(qf, anyElements.get(0), false);
       if (tableName == null) {
         return false;
       }
       for (CommonTree anyElement : anyElements) {
-        String tbName = getTableName(qf, anyElement);
+        String tbName = FilterBlockUtil.getTableName(qf, anyElement, false);
         if (!tbName.equals(tableName)) {
           return false;
         }
@@ -341,53 +274,6 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
     }
     return false;
   }
-
-
-  /**
-   * get the table name of the column.
-   *
-   * this function is copied from CrossJoinTransformer
-   *
-   * @param qf
-   * @param anyElement
-   * @return
-   * @throws SqlXlateException
-   */
-  private String getTableName(QueryInfo qf, CommonTree anyElement) throws SqlXlateException {
-    String table = null;
-
-    CommonTree currentSelect = (CommonTree) anyElement
-        .getAncestor(PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT);
-
-    if (anyElement.getChildCount() > 1) {
-      table = anyElement.getChild(0).getText();
-      if (anyElement.getChildCount() > 2) {
-        // schema.table
-        table += ("." + anyElement.getChild(1).getText());
-        // merge schema and table as HIVE does not support schema.table.column in where clause.
-        anyElement.deleteChild(1);
-        ((CommonTree) anyElement.getChild(0)).getToken().setText(table);
-      }
-      //
-      // Return null table name if it is not a src table.
-      //
-      if (!qf.getSrcTblAliasForSelectKey(currentSelect).contains(table)) {
-        table = null;
-      }
-    } else {
-      String columnName = anyElement.getChild(0).getText();
-      List<Column> fromRowInfo = qf.getRowInfo((CommonTree) currentSelect
-          .getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_FROM));
-      for (Column col : fromRowInfo) {
-        if (col.getColAlias().equals(columnName)) {
-          table = col.getTblAlias();
-          break;
-        }
-      }
-    }
-    return table;
-  }
-
 
   /**
    * make a map of the table column name and table column alias
@@ -472,6 +358,5 @@ public class FilterInwardTransformer extends BaseSqlASTTransformer {
     } else {
       throw new SqlXlateException(filterOp, "unknow filter operation:" + filterOp.getText());
     }
-
   }
 }

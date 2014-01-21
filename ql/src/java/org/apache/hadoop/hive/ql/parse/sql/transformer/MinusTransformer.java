@@ -21,8 +21,6 @@ import java.util.List;
 
 import org.antlr.runtime.tree.CommonTree;
 import org.apache.hadoop.hive.ql.parse.sql.PantheraExpParser;
-import org.apache.hadoop.hive.ql.parse.sql.SqlXlateException;
-import org.apache.hadoop.hive.ql.parse.sql.TranslateContext;
 import org.apache.hadoop.hive.ql.parse.sql.transformer.fb.FilterBlockUtil;
 
 import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
@@ -34,27 +32,6 @@ import br.com.porcelli.parser.plsql.PantheraParser_PLSQLParser;
  *
  */
 public class MinusTransformer extends SetOperatorTransformer {
-  SqlASTTransformer tf;
-
-  public MinusTransformer(SqlASTTransformer tf) {
-    this.tf = tf;
-  }
-
-  @Override
-  protected void transform(CommonTree tree, TranslateContext context) throws SqlXlateException {
-    tf.transformAST(tree, context);
-    trans(tree, context);
-  }
-
-  private void trans(CommonTree node, TranslateContext context) throws SqlXlateException {
-    int childCount = node.getChildCount();
-    for (int i = 0; i < childCount; i++) {
-      trans((CommonTree) node.getChild(i), context);
-    }
-    if (node.getType() == PantheraExpParser.PLSQL_RESERVED_MINUS) {
-      processIntersect(node, context);
-    }
-  }
 
   @Override
   CommonTree makeJoinNode(CommonTree on) {
@@ -79,16 +56,7 @@ public class MinusTransformer extends SetOperatorTransformer {
       CommonTree cacatedElement = FilterBlockUtil.createCascatedElementBranch(isNull, rightAlias,
           rightColumnAliasList.get(i).getChild(0).getText());
       isNull.addChild(cacatedElement);
-      if (logicExpr.getChildCount() == 0) {
-        logicExpr.addChild(isNull);
-      } else {
-        CommonTree and = FilterBlockUtil.createSqlASTNode(setOperator, PantheraExpParser.SQL92_RESERVED_AND,
-            "and");
-        CommonTree leftChild = (CommonTree) logicExpr.deleteChild(0);
-        and.addChild(leftChild);
-        and.addChild(isNull);
-        logicExpr.addChild(and);
-      }
+      FilterBlockUtil.addConditionToLogicExpr(logicExpr, isNull);
     }
     return where;
 

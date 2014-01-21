@@ -48,42 +48,65 @@ public class ConditionStructTransformer extends BaseSqlASTTransformer {
   @Override
   public void transform(CommonTree tree, TranslateContext context) throws SqlXlateException {
     tf.transformAST(tree, context);
-    Stack<CommonTree> selStack = new Stack<CommonTree>();
-    this.transformStructDeepFirst(tree, selStack, context);
+
+    QueryInfo qInfo = context.getQInfoRoot();
+    transformStructDeepFirstQI(qInfo, context);
   }
 
-  public void transformStructDeepFirst(CommonTree tree, Stack<CommonTree> selStack,
+  /**
+   * travel QI tree to pass QI down for use instead of instant look up
+   *
+   * @param tree
+   * @param context
+   * @throws SqlXlateException
+   */
+  private void transformStructDeepFirstQI(QueryInfo qf, TranslateContext context) throws SqlXlateException {
+    for (QueryInfo qinfo : qf.getChildren()) {
+      transformStructDeepFirstQI(qinfo, context);
+    }
+    if (!qf.isQInfoTreeRoot()) {
+      Stack<CommonTree> selStack = new Stack<CommonTree>();
+      CommonTree tree = qf.getSelectKeyForThisQ();
+      this.transformStructDeepFirst(qf, tree, selStack, context);
+    }
+  }
+
+  public void transformStructDeepFirst(QueryInfo qi, CommonTree tree, Stack<CommonTree> selStack,
       TranslateContext context) throws SqlXlateException {
+    if (tree.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_FROM) {
+      // only search current qi
+      return;
+    }
     if (tree.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
       selStack.push(tree);
     }
     for (int i = 0; i < tree.getChildCount(); i++) {
-      transformStructDeepFirst((CommonTree) (tree.getChild(i)), selStack, context);
+      transformStructDeepFirst(qi, (CommonTree) (tree.getChild(i)), selStack, context);
     }
     if (tree.getType() == PantheraParser_PLSQLParser.SQL92_RESERVED_SELECT) {
-      transformStruct(tree, selStack, context);
+      transformStruct(qi, tree, selStack, context);
       selStack.pop();
     }
   }
 
-  public void transformStruct(CommonTree tree, final Stack<CommonTree> selStack,
+  public void transformStruct(QueryInfo qi, CommonTree tree, final Stack<CommonTree> selStack,
       TranslateContext context) throws SqlXlateException {
     CommonTree where = (CommonTree) tree.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_WHERE);
     if (where != null) {
       // pass logic_expr
-      transformStructDeMorgan((CommonTree) where.getChild(0), selStack, context);
+      transformStructDeMorgan(qi, (CommonTree) where.getChild(0), selStack, context);
     }
     CommonTree group = (CommonTree) tree.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_GROUP);
     if (group != null) {
       CommonTree having = (CommonTree) group.getFirstChildWithType(PantheraParser_PLSQLParser.SQL92_RESERVED_HAVING);
       if (having != null) {
         // pass logic_expr
-        transformStructDeMorgan((CommonTree) having.getChild(0), selStack, context);
+        transformStructDeMorgan(qi, (CommonTree) having.getChild(0), selStack, context);
       }
     }
   }
 
-  private void transformStructDeMorgan(CommonTree tree, final Stack<CommonTree> selectStack,
+  private void transformStructDeMorgan(QueryInfo qi, CommonTree tree, final Stack<CommonTree> selectStack,
       TranslateContext context) throws SqlXlateException {
     Stack<ConditionWithSelectStack> logicCondition = new Stack<ConditionWithSelectStack>();
     ConditionWithSelectStack cwss = new ConditionWithSelectStack();
@@ -98,7 +121,7 @@ public class ConditionStructTransformer extends BaseSqlASTTransformer {
       throw new SqlXlateException(tree, "LOGIC_EXPR contain more than 1 condition, but not connected by AND/OR");
     }
     for (ConditionWithSelectStack conditions : conditionSet) {
-      CommonTree transformedBlock = transformStructWithoutOr(conditions.condition, conditions.selStack, context);
+      CommonTree transformedBlock = transformStructWithoutOr(qi, conditions.condition, conditions.selStack, context);
       if (tree.getChildCount() == 0) {
         tree.addChild(transformedBlock);
       } else {
@@ -112,15 +135,15 @@ public class ConditionStructTransformer extends BaseSqlASTTransformer {
     }
   }
 
-  private CommonTree transformStructWithoutOr(CommonTree conditionBlock,
+  private CommonTree transformStructWithoutOr(final QueryInfo qi, CommonTree conditionBlock,
       final Stack<CommonTree> selectStack, final TranslateContext context) {
     List<CommonTree> conditions = BreakUpByAnd(conditionBlock);
     Collections.sort(conditions, new Comparator<CommonTree>() {
       @Override
       public int compare(CommonTree arg0, CommonTree arg1) {
         try {
-          return FilterBlockUtil.getConditionLevel(arg0, selectStack, context)
-              - FilterBlockUtil.getConditionLevel(arg1, selectStack, context);
+          return FilterBlockUtil.getConditionLevel(qi, arg0, selectStack, context)
+              - FilterBlockUtil.getConditionLevel(qi, arg1, selectStack, context);
         } catch (SqlXlateException e) {
           e.printStackTrace();
           return 0;
